@@ -116,24 +116,11 @@ moveActions :: Player -> Parser [MoveAction]
 moveActions p = moveAction p `sepEndBy1` (char ';' >> spaces)
 
 dummy :: Player
-dummy = Player Dummy ()
+dummy = Player (Dummy 0)
 
 readCards :: String -> Either String [Card]
 readCards str =
   case runParser (card `sepEndBy` spaces) () "<input>" str of
     Right res -> return res
     Left e -> failure $ show e
-
-atomicallyTry :: Game () -> Game Bool
-atomicallyTry action = do
-  st <- get
-  r <- lift $ E.try $ execStateT action st
-  case r of
-    Right st' -> do
-                 put st'
-                 return True
-    Left err -> do
-                lift $ putStrLn $ "Error: " ++ show (err :: E.SomeException)
-                put st
-                return False
 

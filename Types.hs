@@ -1,4 +1,4 @@
-{-# LANGUAGE ExistentialQuantification, TypeFamilies, GADTs, TypeOperators, FlexibleContexts #-}
+{-# LANGUAGE ExistentialQuantification, TypeFamilies, GADTs, TypeOperators, FlexibleContexts, DeriveDataTypeable #-}
 
 module Types where
 
@@ -8,6 +8,8 @@ import Control.Failure
 import Data.Functor
 import Text.Printf
 import Data.List
+import Data.Maybe
+import Data.Generics
 
 import Cards
 
@@ -45,6 +47,20 @@ meldCards (Avenue _ val suits owners jokers) = zip owners $ zipWith card jokers 
   where
     card (Just clr) _ = Joker clr
     card Nothing suit = Card suit val
+
+meldCards' :: Meld -> [(Player, Card)]
+meldCards' (Street _ suit from to owners _) = zip owners $ map (Card suit) [from..to]
+meldCards' (Avenue _ val suits owners _) = zip owners [Card suit val | suit <- suits]
+
+meldGetJokers :: Meld -> [(CardColor, Card)]
+meldGetJokers (Street _ suit from to _ jokers) = catMaybes $ zipWith card jokers [from..to]
+  where
+    card Nothing _ = Nothing
+    card (Just clr) val = Just (clr, Card suit val)
+meldGetJokers (Avenue _ val suits _ jokers) = catMaybes $ zipWith card jokers suits
+  where
+    card Nothing _ = Nothing
+    card (Just clr) suit = Just (clr, Card suit val)
 
 allSame :: (Eq b) => (a -> b) -> [a] -> Bool
 allSame fn xs = and $ zipWith (==) ys (tail ys)
@@ -154,8 +170,9 @@ instance Show GameState where
             "Melds:\n" ++ unwords (map showMeld (melds gs)) ++ "\n" ++
             "Trash: " ++ unwords (map show $ trash gs)
     where
-      showMeld m = "  " ++ show m ++ "\n"
       showHand i hand = "  " ++ show i ++ ":\t" ++ unwords (map show hand) ++ "\n"
+
+showMeld m = "  " ++ show m ++ "\n"
 
 type Game a = StateT GameState IO a
 
@@ -180,30 +197,28 @@ setelt i v (x:xs)
   | i > 0 = x: setelt (i-1) v xs
   | otherwise = error $ "Unexpected: setelt " ++ show i
 
-class IsPlayer p where
-  type PlayerState p
+class Typeable p => IsPlayer p where
   playerName :: p -> String
+  playerIdx :: p -> Int
   playerSelectMove :: p -> Game Move
+  onMove :: p -> Player -> Move -> Game ()
+  onMove _ _ _ = return ()
 
-data Dummy = Dummy
+data Dummy = Dummy Int
+  deriving (Typeable)
 
 instance IsPlayer Dummy where
-  type PlayerState Dummy = ()
   playerName _ = "Dummy"
+  playerIdx (Dummy i) = i
   playerSelectMove _ = fail $ "Move selection is not implemented for dummy player"
 
-data Player = forall p. IsPlayer p => Player p (PlayerState p)
+data Player = forall p. IsPlayer p => Player p 
 
 instance Eq Player where
-  (Player p1 _) == (Player p2 _) = playerName p1 == playerName p2
+  (Player p1 ) == (Player p2) = playerName p1 == playerName p2
 
 instance Show Player where  
-  show (Player p _) = playerName p
-
-instance IsPlayer Player where
-  type PlayerState Player = ()
-  playerName (Player p _) = playerName p
-  playerSelectMove (Player p _) = playerSelectMove p
+  show (Player p) = playerName p
 
 data MoveAction =
     ChangeJoker CardColor MeldId
@@ -226,7 +241,19 @@ data Move = Move {
   toNewMelds :: [Meld],
   toAddToMelds :: [(Card, MeldId)],
   toTrash :: Card }
-  deriving (Eq, Show)
+  deriving (Eq)
+
+instance Show Move where
+  show move = maybe "" showChangeJoker (toChangeJoker move) ++
+              maybe "" showPick (toPickTrash move) ++
+              unlines (map goMeld $ toNewMelds move) ++
+              unlines (map goAdd $ toAddToMelds move) ++
+              "\nTrash " ++ show (toTrash move)
+    where
+      showChangeJoker (clr, i) = printf "Change %s Joker from meld #%d\n" (show clr) i
+      showPick n = printf "Pick last %d cards from trash\n" n
+      goMeld meld = "New meld: " ++ show meld
+      goAdd (card,i) = printf "Add %s to meld #%d" (show card) i
 
 buildMove :: (Monad m, Failure String m) => [MoveAction] -> m Move
 buildMove mas =
