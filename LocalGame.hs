@@ -92,6 +92,6 @@ runPlayer i actor@(Player player) = go 3
         else go (n-1)
 
 main = do
-  let players = [human 0, ai 1]
+  let players = [ai 0, ai 1]
   runStateT testGame (emptyState players)
 

@@ -118,7 +118,15 @@ buildMeld player cards = do
                                        meldOwners = replicate (length cards) player,
                                        meldJokers = jokers }
                           else do
-                            return $ Street {
+                            if maximum sorted == fromEnum Ace
+                              then return $ Street {
+                                       meldId = 0,
+                                       streetSuit = suit (head nojokers),
+                                       streetFrom = toEnum $ minimum sorted - 1,
+                                       streetTo   = toEnum $ maximum sorted,
+                                       meldOwners = replicate (length cards) player,
+                                       meldJokers = Just jokerColor : replicate (length nojokers) Nothing }
+                              else return $ Street {
                                        meldId = 0,
                                        streetSuit = suit (head nojokers),
                                        streetFrom = toEnum $ minimum sorted,

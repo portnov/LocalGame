@@ -41,6 +41,7 @@ instance Enum CardValue where
   toEnum 12 = Queen
   toEnum 13 = King
   toEnum 14 = Ace
+  toEnum n = error $ "Unexpected: invalid card value: " ++ show n
 
 instance Bounded CardValue where
   minBound = N 2
