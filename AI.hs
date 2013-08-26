@@ -9,6 +9,7 @@ import Data.List
 import qualified Data.Map as M
 import Data.Generics
 import Text.Printf
+import System.IO
 
 import Cards
 import Types
@@ -28,20 +29,34 @@ instance IsPlayer AI where
   playerIdx (AI i _) = i
 
   playerSelectMove me@(AI i knownCards) = do
-    hand <- getHand i
-    lift $ putStrLn $ printf "AI#%d has %d cards in hand." i (length hand)
-    moves <- validMoves (Player me) hand
-    if null moves
-      then fail "Unexpected: no moves."
-      else do
---             lift $ print moves
-            rs <- mapM (evalGame . evalMove i) moves
-            newPoints <- zipWithM (movePoints i knownCards) moves rs
-            let maxPoints = maximum newPoints
-                Just moveIdx = findIndex (== maxPoints) newPoints
-                move = moves !! moveIdx
-            lift $ putStrLn $ "AI move: " ++ show move
-            return move
+      hand <- getHand i
+      lift $ putStrLn $ printf "AI#%d has %d cards in its hand." i (length hand)
+      moves <- validMoves (Player me) hand
+      lift $ putStrLn $ printf "Selecting best of %d moves..." (length moves)
+      if null moves
+        then fail "Unexpected: no moves."
+        else do
+              lift $ hFlush stdout
+              rs <- zipWithM go [1..] moves
+              lift $ putStrLn ""
+              lift $ putStr "Estimating moves: "
+              lift $ hFlush stdout
+              newPoints <- zipWithM (points hand) (zip [1..] moves) rs
+              let maxPoints = maximum newPoints
+                  Just moveIdx = findIndex (== maxPoints) newPoints
+                  move = moves !! moveIdx
+              lift $ putStrLn $ "\nAI move: " ++ show move
+              return move
+    where
+      go j move = do
+        r <- evalGame $ evalMove i move
+        return r
+
+      points hand (j,move) r = do
+        p <- movePoints i hand knownCards move r
+        lift $ putStr $ printf "[%d:%d]" (j :: Int) p
+        lift $ hFlush stdout
+        return p
 
 
   onMove me@(AI i st) player@(Player p) move = do
@@ -51,8 +66,8 @@ instance IsPlayer AI where
            whenJust (toPickTrash move) (onPickTrash i player)
            onTrash i player (toTrash move)
 
-movePoints i _ move Nothing = fail $ "Unexpected: invalid move generated: " ++ show move
-movePoints i knownCards move (Just st) = do
+movePoints i _ _ move Nothing = fail $ "Unexpected: invalid move generated: " ++ show move
+movePoints i hand knownCards move (Just st) = do
     let newPoints = myPoints i st
     t <- gets trash
     let newTrash = toTrash move : t
@@ -62,7 +77,9 @@ movePoints i knownCards move (Just st) = do
     let maxOtherPoints = if null otherPoints
                            then 0
                            else maximum otherPoints
-    return $ newPoints - maxOtherPoints
+    let newSz = newHandSize move hand
+        bonus = if newSz == 0 then exitBonus else 0
+    return $ newPoints - maxOtherPoints + exitBonus
   where
     go p hand = sum $ map eval $ possibleMelds p hand
     eval meld = sum $ map meldPoints $ map snd $ meldCards' meld

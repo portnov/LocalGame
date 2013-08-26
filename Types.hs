@@ -155,7 +155,7 @@ buildMeld player cards = do
                  meldJokers  = Just jokerColor : replicate (length nojokers) Nothing }
 
 instance Show Meld where
-  show meld = ("[" ++ show i ++ "]: ") ++ (untabs $ map showCard cards) ++ "\n\t" ++
+  show meld = ("[" ++ show i ++ "]:\t") ++ (untabs $ map showCard cards) ++ "\n\t" ++
                                           (untabs $ map showPlayer cards)
     where
       cards = meldCards meld
@@ -178,9 +178,9 @@ instance Show GameState where
             "Melds:\n" ++ unwords (map showMeld (melds gs)) ++ "\n" ++
             "Trash: " ++ unwords (map show $ trash gs)
     where
-      showHand i hand = "  " ++ show i ++ ":\t" ++ unwords (map show hand) ++ "\n"
+      showHand i hand = show i ++ ":\t" ++ unwords (map show hand) ++ "\n"
 
-showMeld m = "  " ++ show m ++ "\n"
+showMeld m = show m ++ "\n"
 
 type Game a = StateT GameState IO a
 
@@ -260,7 +260,7 @@ instance Show Move where
     where
       showChangeJoker (clr, i) = printf "Change %s Joker from meld #%d\n" (show clr) i
       showPick n = printf "Pick last %d cards from trash\n" n
-      goMeld meld = "New meld: " ++ show meld
+      goMeld meld = "New meld:\n" ++ show meld
       goAdd (card,i) = printf "Add %s to meld #%d" (show card) i
 
 buildMove :: (Monad m, Failure String m) => [MoveAction] -> m Move

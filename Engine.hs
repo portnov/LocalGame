@@ -14,6 +14,9 @@ import Types
 
 instance E.Exception String
 
+exitBonus :: Int
+exitBonus = 50
+
 whenJust :: Monad m => Maybe a -> (a -> m ()) -> m ()
 whenJust Nothing _ = return ()
 whenJust (Just x) fn = fn x
@@ -37,7 +40,8 @@ getPoints i = do
   player <- getPlayer i
   ms <- gets melds
   let allMelds = [c | (p,c) <- concat (map meldCards' ms), p == player]
-  return $ sum (map meldPoints allMelds) - sum (map handPoints hand)
+      bonus = if length hand == 0 then exitBonus else 0
+  return $ sum (map meldPoints allMelds) - sum (map handPoints hand) + bonus
 
 myPoints :: Int -> GameState -> Int
 myPoints i st =
@@ -207,6 +211,15 @@ meldAdd player meld@(Avenue {}) card = do
                            meldOwners = player : meldOwners meld,
                            meldJokers = Nothing : meldJokers meld }
 
+newHandSize :: Move -> Hand -> Int
+newHandSize move hand = 
+  let allNewMelds = concat $ map meldCards (toNewMelds move)
+      added = toAddToMelds move
+      diffCardsNumber = fromMaybe 0 (toPickTrash move) -
+                        length allNewMelds - length added - 1
+  in  length hand + diffCardsNumber
+
+
 checkMove :: Player -> Move -> Game ()
 checkMove actor@(Player player) move = do
   t <- gets trash
@@ -223,16 +236,14 @@ checkMove actor@(Player player) move = do
         lastCard = last newCards
     when (lastCard `notElem` (allNewMelds ++ added)) $
       fail $ "You can pick trash only to use it in new or existing melds."
-  let diffCardsNumber = fromMaybe 0 (toPickTrash move) -
-                        length allNewMelds - length added - 1
   case toTrash move of
     Joker _ -> fail "You can not trash joker."
     _ -> return ()
   hand <- getHand (playerIdx player)
-  let newHandSize = length hand + diffCardsNumber
-  if newHandSize < 0
+  let newSz = newHandSize move hand
+  if newSz < 0
     then fail "Too many cards spended"
-    else if newHandSize == 0 && not canExit
+    else if newSz == 0 && not canExit
            then fail "You can not exit yet."
            else return ()
 
