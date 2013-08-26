@@ -6,6 +6,7 @@ import Data.Generics
 import Text.Printf
 import Text.Parsec (runParser)
 import System.IO
+import System.Environment
 
 import Cards
 import Types
@@ -44,9 +45,9 @@ instance IsPlayer Human where
 human :: Int -> Player
 human i = Player (Human i)
 
-testGame :: Game ()
-testGame = do
-  initGame 2 3
+testGame :: Int -> Game ()
+testGame nPlayers = do
+  initGame nPlayers 3
   runGame
 
 runGame :: Game ()
@@ -91,7 +92,16 @@ runPlayer i actor@(Player player) = go 3
         then return ()
         else go (n-1)
 
+makePlayer :: String -> Int -> Player
+makePlayer "ai" i = ai i
+makePlayer "human" i = human i
+makePlayer str _ = error $ "Unknown player type: " ++ str
+
 main = do
-  let players = [ai 0, ai 1]
-  runStateT testGame (emptyState players)
+  argv <- getArgs
+  let playerTypes = if null argv
+                      then ["ai", "ai"]
+                      else argv
+  let players = zipWith makePlayer playerTypes [0..]
+  runStateT (testGame $ length players) (emptyState players)
 

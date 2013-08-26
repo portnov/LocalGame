@@ -88,6 +88,7 @@ instance GameCard Card where
   cardPoints (Card _ Queen) = 12
   cardPoints (Card _ King)  = 13
   cardPoints (Card _ Ace)   = 14
+  cardPoints x = error $ "Unexpected card: " ++ show x
 
 (<#) :: GameCard a => a -> a -> Bool
 a <# b = a `compareCards` b == LT

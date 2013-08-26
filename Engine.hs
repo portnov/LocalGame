@@ -52,6 +52,7 @@ myPoints i st =
 
 giveCard :: Int -> Game ()
 giveCard i = do
+  lift $ putStrLn $ "Giving card to player #" ++ show i
   st <- get
   cards <- gets deck
   case cards of
@@ -64,11 +65,11 @@ giveCard i = do
       modify $ \st -> st {deck = newDeck}
 
 initGame :: Int -> Int -> Game ()
-initGame n handSize = do
+initGame nPlayers handSize = do
   pack <- lift $ shuffle fullPack
   modify $ \st -> st {deck = pack}
   replicateM_ handSize $ do
-    forM_ [0..n-1] $ \playerIdx -> do
+    forM_ [0..nPlayers-1] $ \playerIdx -> do
       giveCard playerIdx
   (card:newDeck) <- gets deck
   modify $ \st -> st {deck = newDeck, trash = [card]}
