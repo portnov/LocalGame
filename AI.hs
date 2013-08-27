@@ -40,11 +40,22 @@ instance IsPlayer AI where
 
   playerSelectMove me@(AI i knownCards) = do
       hand <- getHand i
-      lift $ putStrLn $ printf "AI#%d has %d cards in its hand." i (length hand)
+      let totalKnownCards = sum $ map length $ M.elems knownCards
+          nKnownCardPlayers = M.size knownCards
+      lift $ putStrLn $ printf "AI#%d has %d cards in its hand. It knows %d cards of %d other players." i (length hand) totalKnownCards nKnownCardPlayers
       moves <- validMoves (Player me) hand
       let nMoves = length moves
       if null moves
-        then fail "Unexpected: no moves."
+        then if length hand == 1
+               then do
+                    lift $ putStrLn $ "Single card, put it to trash and exit."
+                    return $ Move {
+                              toChangeJoker = Nothing,
+                              toPickTrash = Nothing,
+                              toNewMelds = [],
+                              toAddToMelds = [],
+                              toTrash = head hand }
+               else fail "Unexpected: no moves."
         else do
               rs <- mapM go moves
               lift $ putStr $ printf "Selecting best of %d moves: " nMoves
@@ -101,6 +112,8 @@ instance IsPlayer AI where
       then return ()
       else do
            whenJust (toPickTrash move) (onPickTrash i player)
+           forM_ (toNewMelds move) $ \meld -> onNewMeld i player $ map snd $ meldCards meld
+           forM_ (toAddToMelds move) (onAddToMeld i player)
            onTrash i player (toTrash move)
 
 movePoints :: Int -> Hand -> M.Map String [Card] -> Move -> Maybe GameState -> Game Int
@@ -157,5 +170,12 @@ onPickTrash me (Player p) n = do
 
 onTrash :: Int -> Player -> Card -> Game ()
 onTrash me (Player p) card = do
+  modifyMe me $ dropKnownCard (playerName p) card
+
+onNewMeld me (Player p) cards = do
+  forM_ cards $ \card -> do
+    modifyMe me $ dropKnownCard (playerName p) card
+
+onAddToMeld me (Player p) (card,_) = do
   modifyMe me $ dropKnownCard (playerName p) card
 
