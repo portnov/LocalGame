@@ -161,7 +161,12 @@ addKnownCards :: String -> [Card] -> AI -> AI
 addKnownCards p cards st = st { aiKnownCards = M.insertWith (++) p cards (aiKnownCards st) }
 
 dropKnownCard :: String -> Card -> AI -> AI
-dropKnownCard p card st = st { aiKnownCards = M.update (Just . delete card) p (aiKnownCards st) }
+dropKnownCard p card st = st { aiKnownCards = M.update update p (aiKnownCards st) }
+  where
+    update list = let res = delete card list
+                  in  if null res
+                        then Nothing
+                        else Just res
 
 onPickTrash :: Int -> Player -> Int -> Game ()
 onPickTrash me (Player p) n = do
