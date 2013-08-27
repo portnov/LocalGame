@@ -243,9 +243,10 @@ checkMove actor@(Player player) move = do
     _ -> return ()
   hand <- getHand (playerIdx player)
   let newSz = newHandSize move hand
+  deckSz <- gets (length . deck)
   if newSz < 0
     then fail "Too many cards spended"
-    else if newSz == 0 && not canExit
+    else if newSz == 0 && not canExit && deckSz > 0
            then fail "You can not exit yet."
            else return ()
 
@@ -254,6 +255,11 @@ isMoveValid player move = do
   r <- atomicallyTry False (checkMove player move)
   when r $
       lift $ putStr "." >> hFlush stdout
+  return r
+
+isMoveValid' :: Player -> Move -> Game Bool
+isMoveValid' player move = do
+  r <- atomicallyTry True (checkMove player move)
   return r
 
 atomicallyTry :: Bool -> Game () -> Game Bool

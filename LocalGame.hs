@@ -54,15 +54,16 @@ runGame :: Game ()
 runGame = do
     ps <- gets players
     let ns = [0 .. length ps - 1]
-    go $ zip (cycle ns) (cycle ps)
+    go (cycle ns)
   where
     go [] = return ()
-    go ((i,actor):ns) = do
+    go (i:ns) = do
       giveCard i
       hs <- gets hands
       if any null hs
         then endOfGame
         else do
+          actor <- getPlayer i
           case actor of
             Player player -> do
               st <- get
@@ -87,13 +88,15 @@ allOnMove actor@(Player player) move = do
   forM_ ps $ \(Player p) -> do
     onMove p actor move
     
-
 runPlayer i actor@(Player player) = go 3
   where
     go 0 = fail "Too many errors, exiting."
     go n = do
       ok <- atomicallyTry True $ do
               move <- playerSelectMove player
+              valid <- isMoveValid' actor move
+              when (not valid) $
+                  fail $ "Move is not valid."
               allOnMove actor move
               evalMove i move
       if ok
