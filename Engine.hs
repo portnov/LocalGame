@@ -8,6 +8,7 @@ import Math.Combinat.Sets
 import Data.List
 import Data.Maybe
 import Text.Printf
+import System.IO
 
 import Cards
 import Types
@@ -52,7 +53,6 @@ myPoints i st =
 
 giveCard :: Int -> Game ()
 giveCard i = do
-  lift $ putStrLn $ "Giving card to player #" ++ show i
   st <- get
   cards <- gets deck
   case cards of
@@ -62,6 +62,7 @@ giveCard i = do
     (card:newDeck) -> do
       hand <- getHand i
       setHand i $ card: hand
+      lift $ putStrLn $ "Giving card to player #" ++ show i
       modify $ \st -> st {deck = newDeck}
 
 initGame :: Int -> Int -> Game ()
@@ -249,8 +250,11 @@ checkMove actor@(Player player) move = do
            else return ()
 
 isMoveValid :: Player -> Move -> Game Bool
-isMoveValid player move =
-  atomicallyTry False (checkMove player move)
+isMoveValid player move = do
+  r <- atomicallyTry False (checkMove player move)
+  when r $
+      lift $ putStr "." >> hFlush stdout
+  return r
 
 atomicallyTry :: Bool -> Game () -> Game Bool
 atomicallyTry toPrintExc action = do

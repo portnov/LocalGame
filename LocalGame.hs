@@ -52,27 +52,35 @@ testGame nPlayers = do
 
 runGame :: Game ()
 runGame = do
-  ps <- gets players
-  let ns = [0.. length ps - 1]
-  forM_ ns $ \i -> do
-    giveCard i
-    case ps !! i of
-      p@(Player player) -> do
-        st <- get
-        lift $ putStrLn $ "Trash: " ++ unwords (map show $ trash st)
-        lift $ putStrLn $ "Melds:\n" ++ unwords (map showMeld (melds st))
-        lift $ putStrLn $ printf "Player %s move:" (playerName player)
-        runPlayer i p
-  hs <- gets hands
-  if any null hs
-    then do
-         st <- get
-         lift $ putStrLn "End of game. States:"
-         lift $ print st
-         forM_ ns $ \i -> do
-           points <- getPoints i
-           lift $ putStrLn $ printf "Player #%d points: %d" i points
-    else runGame
+    ps <- gets players
+    let ns = [0 .. length ps - 1]
+    go $ zip (cycle ns) (cycle ps)
+  where
+    go [] = return ()
+    go ((i,actor):ns) = do
+      giveCard i
+      hs <- gets hands
+      if any null hs
+        then endOfGame
+        else do
+          case actor of
+            Player player -> do
+              st <- get
+              lift $ putStrLn $ "Trash: " ++ unwords (map show $ trash st)
+              lift $ putStrLn $ "Melds:\n" ++ unwords (map showMeld (melds st))
+              lift $ putStrLn $ printf "Player %s move:" (playerName player)
+              runPlayer i actor
+              go ns
+
+    endOfGame = do
+       st <- get
+       let ps = players st
+           ns = [0 .. length ps - 1]
+       lift $ putStrLn "End of game. States:"
+       lift $ print st
+       forM_ ns $ \i -> do
+         points <- getPoints i
+         lift $ putStrLn $ printf "Player #%d points: %d" i points
 
 allOnMove actor@(Player player) move = do
   ps <- gets players

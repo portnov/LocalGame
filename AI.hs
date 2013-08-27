@@ -43,12 +43,14 @@ instance IsPlayer AI where
       let totalKnownCards = sum $ map length $ M.elems knownCards
           nKnownCardPlayers = M.size knownCards
       lift $ putStrLn $ printf "AI#%d has %d cards in its hand. It knows %d cards of %d other players." i (length hand) totalKnownCards nKnownCardPlayers
+      lift $ putStr $ "Generating list of possible moves: "
+      lift $ hFlush stdout
       moves <- validMoves (Player me) hand
       let nMoves = length moves
       if null moves
         then if length hand == 1
                then do
-                    lift $ putStrLn $ "Single card, put it to trash and exit."
+                    lift $ putStrLn $ " single card, put it to trash and exit."
                     return $ Move {
                               toChangeJoker = Nothing,
                               toPickTrash = Nothing,
@@ -58,7 +60,7 @@ instance IsPlayer AI where
                else fail "Unexpected: no moves."
         else do
               rs <- mapM go moves
-              lift $ putStr $ printf "Selecting best of %d moves: " nMoves
+              lift $ putStr $ printf " done.\nSelecting best of %d moves: " nMoves
               lift $ hFlush stdout
               currentSt <- get
               let currentPoints = myPoints i currentSt
@@ -70,7 +72,8 @@ instance IsPlayer AI where
                   maxPoints = maximum newPoints
                   Just moveIdx = findIndex (== maxPoints) newPoints
                   move = fst $ newPointMs !! moveIdx
-              lift $ putStrLn $ printf "\nAI#%d selected move #%d (points %d): %s" i (nMoves - moveIdx - 1) maxPoints (show move)
+                  seenMoves = length newPointMs
+              lift $ putStrLn $ printf "\nAI#%d selected move #%d (points %d): %s" i (seenMoves - moveIdx - 1) maxPoints (show move)
               return move
     where
       go move = do
