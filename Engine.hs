@@ -146,7 +146,7 @@ meldChangeJoker meld clr =
     Nothing -> fail $ printf "No %s joker in meld" (show clr)
     Just jokerIdx -> do
         let meld' = meld {meldJokers = setelt jokerIdx Nothing (meldJokers meld)}
-            (_,card) = meldCards meld !! jokerIdx
+            (_,card) = meldCards' meld !! jokerIdx
         return (meld', card)
 
 changeJoker i (clr, meldId) = do
@@ -154,7 +154,7 @@ changeJoker i (clr, meldId) = do
   meld <- getMeld meldId
   (meld', card) <- meldChangeJoker meld clr
   setMeld meldId meld'
-  setHand i $ filter (/= card) hand ++ [Joker clr]
+  setHand i $ delete card hand ++ [Joker clr]
 
 pickTrash i n = do
   hand <- getHand i

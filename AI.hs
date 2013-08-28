@@ -173,7 +173,6 @@ dropKnownCard p card st = st { aiKnownCards = M.update update p (aiKnownCards st
 
 onPickTrash :: Int -> Player -> Int -> Game ()
 onPickTrash me (Player p) n = do
-  lift $ putStrLn $ printf "onPickTrash: %d cards" n
   cards <- gets (take n . trash)
   modifyMe me $ addKnownCards (playerName p) cards
 
