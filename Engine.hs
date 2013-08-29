@@ -11,6 +11,7 @@ import Data.List
 import Data.Maybe
 import Text.Printf
 import System.IO
+import System.Random
 
 import Cards
 import qualified CardSet as C
@@ -70,13 +71,23 @@ giveCard i = do
 
 initGame :: Int -> Int -> Game ()
 initGame nPlayers handSize = do
-  pack <- lift $ shuffle fullPack
-  modify $ \st -> st {deck = pack}
-  replicateM_ handSize $ do
-    forM_ [0..nPlayers-1] $ \playerIdx -> do
-      giveCard playerIdx
-  (card:newDeck) <- gets deck
-  modify $ \st -> st {deck = newDeck, trash = [card]}
+    pack <- lift $ shuffle fullPack
+    modify $ \st -> st {deck = pack}
+    replicateM_ handSize $ do
+      forM_ [0..nPlayers-1] $ \playerIdx -> do
+        giveCard playerIdx
+    trashOne
+  where
+    trashOne = do
+      (card:newDeck) <- gets deck
+      if isJoker card
+        then do
+             lift $ putStrLn "Will not put joker to trash..."
+             i <- lift $ randomRIO (0, length newDeck - 1)
+             let (here, there) = splitAt i newDeck
+             modify $ \st -> st {deck = here ++ [card] ++ there}
+             trashOne
+        else modify $ \st -> st {deck = newDeck, trash = [card]}
 
 emptyState :: [Player] -> GameState
 emptyState players = GS {
