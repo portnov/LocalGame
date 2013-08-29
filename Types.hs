@@ -152,6 +152,7 @@ buildAvenue player cvalue [jokerColor] suits = do
                  avenueSuits = js : suits,
                  meldOwners  = replicate ncards player,
                  meldJokers  = Just jokerColor : replicate (length suits) Nothing }
+buildAvenue _ _ jokers _ = failure $ "Meld should have maximum 1 joker"
 
 buildMeld :: (Monad m, Failure String m) => Player -> [Card] -> m Meld
 buildMeld _ cards | length cards < 3 = failure $ "Meld should have at least 3 cards"
