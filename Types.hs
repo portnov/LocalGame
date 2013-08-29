@@ -12,12 +12,13 @@ import Data.Maybe
 import Data.Generics
 
 import Cards
+import qualified CardSet as C
 
 thisPackType = PackType 2 True
 
 fullPack = orderedPack thisPackType
 
-type Hand = [Card]
+type Hand = C.CardSet
 type Deck = [Card]
 type Trash = [Card]
 type MeldId = Int
@@ -66,6 +67,91 @@ allSame :: (Eq b) => (a -> b) -> [a] -> Bool
 allSame fn xs = and $ zipWith (==) ys (tail ys)
   where
     ys = map fn xs
+
+buildStreet :: (Monad m, Failure String m) => Player -> Suit -> [CardColor] -> [CardValue] -> m Meld 
+buildStreet _ _ jokers cards | length jokers + length cards < 3 = failure $ "Meld should have at least 3 cards"
+buildStreet player ssuit jokers nojokers = do
+    if length nojokers < 2 || length jokers > 1
+      then failure "Meld should have at least 2 non-jokers and maximum 1 joker"
+      else run
+  where
+    jokerColor = case jokers of
+                   [] -> error "Unexpected: no joker"
+                   [c] -> c
+                   _ -> error "Unexpected: too many jokers"
+    run = do
+      let njokers = length jokers
+      let sorted = sort $ map fromEnum nojokers
+      let diffs = zipWith (-) (tail sorted) sorted
+      let ncards = length jokers + length nojokers
+      if njokers == 0
+        then if any (> 1) diffs
+               then failure $ "There are gaps in street and there are no any jokers"
+               else return $ Street {
+                               meldId = 0,
+                               streetSuit = ssuit,
+                               streetFrom = toEnum $ minimum sorted,
+                               streetTo   = toEnum $ maximum sorted,
+                               meldOwners = replicate ncards player,
+                               meldJokers = replicate ncards Nothing }
+        else -- if njokers == 1
+          if any (> 2) diffs
+            then failure $ "Too large gaps in street"
+            else do
+                 let ngaps = length (filter (> 1) diffs)
+                 if ngaps <= njokers
+                   then if ngaps == 1
+                          then do
+                            let Just i = findIndex (== 2) diffs
+                                jokerIdx = i+1
+                                jokers = replicate jokerIdx Nothing ++ [Just jokerColor] ++
+                                         replicate (length nojokers - jokerIdx) Nothing
+                            return $ Street {
+                                       meldId = 0,
+                                       streetSuit = ssuit,
+                                       streetFrom = toEnum $ minimum sorted,
+                                       streetTo   = toEnum $ maximum sorted,
+                                       meldOwners = replicate ncards player,
+                                       meldJokers = jokers }
+                          else do
+                            if maximum sorted == fromEnum Ace
+                              then return $ Street {
+                                       meldId = 0,
+                                       streetSuit = ssuit,
+                                       streetFrom = toEnum $ minimum sorted - 1,
+                                       streetTo   = toEnum $ maximum sorted,
+                                       meldOwners = replicate ncards player,
+                                       meldJokers = Just jokerColor : replicate (length nojokers) Nothing }
+                              else return $ Street {
+                                       meldId = 0,
+                                       streetSuit = ssuit,
+                                       streetFrom = toEnum $ minimum sorted,
+                                       streetTo   = toEnum $ maximum sorted + 1,
+                                       meldOwners = replicate ncards player,
+                                       meldJokers = replicate (length nojokers) Nothing ++ [Just jokerColor] }
+                   else failure $ "Cant' fill gaps in street with jokers"
+
+buildAvenue :: (Monad m, Failure String m) => Player -> CardValue -> [CardColor] -> [Suit] -> m Meld
+buildAvenue _ _ jokers cards | length jokers + length cards < 3 = failure $ "Meld should have at least 3 cards"
+buildAvenue player cvalue [] suits = do
+      let ncards = length suits
+      return $ Avenue {
+                 meldId = 0,
+                 avenueValue = cvalue,
+                 avenueSuits = suits,
+                 meldOwners  = replicate ncards player,
+                 meldJokers  = replicate ncards Nothing }
+buildAvenue player cvalue [jokerColor] suits = do
+      let ncards = length suits
+      js <- case [Clubs, Diamonds, Hearts, Spades] \\ suits of
+              [] -> failure $ "All suits are used, no place for joker"
+              (s:_) -> return s
+      return $ Avenue {
+                 meldId = 0,
+                 avenueValue = cvalue,
+                 avenueSuits = js : suits,
+                 meldOwners  = replicate ncards player,
+                 meldJokers  = Just jokerColor : replicate (length suits) Nothing }
 
 buildMeld :: (Monad m, Failure String m) => Player -> [Card] -> m Meld
 buildMeld _ cards | length cards < 3 = failure $ "Meld should have at least 3 cards"
@@ -178,7 +264,7 @@ instance Show GameState where
             "Melds:\n" ++ unwords (map showMeld (melds gs)) ++ "\n" ++
             "Trash: " ++ unwords (map show $ trash gs)
     where
-      showHand i hand = show i ++ ":\t" ++ unwords (map show hand) ++ "\n"
+      showHand i hand = show i ++ ":\t" ++ show hand ++ "\n"
 
 showMeld m = show m ++ "\n"
 

@@ -9,6 +9,7 @@ import System.IO
 import System.Environment
 
 import Cards
+import qualified CardSet as C
 import Types
 import Parser
 import Engine
@@ -36,7 +37,7 @@ instance IsPlayer Human where
   playerIdx (Human i) = i
   playerSelectMove u@(Human i) = do
     hand <- getHand i
-    lift $ putStrLn $ show u ++ " hand: " ++ unwords (map show hand)
+    lift $ putStrLn $ show u ++ " hand: " ++ show hand
     lift $ putStr $ show u ++ " move: "
     lift $ hFlush stdout
     str <- lift $ getLine
@@ -60,7 +61,7 @@ runGame = do
     go (i:ns) = do
       giveCard i
       hs <- gets hands
-      if any null hs
+      if any C.null hs
         then endOfGame
         else do
           actor <- getPlayer i

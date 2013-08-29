@@ -5,12 +5,15 @@ import qualified Control.Exception as E
 import Control.Monad
 import Control.Monad.State
 import Math.Combinat.Sets
+import qualified Data.Map as M
+import qualified Data.Set as S
 import Data.List
 import Data.Maybe
 import Text.Printf
 import System.IO
 
 import Cards
+import qualified CardSet as C
 import Types
 
 instance E.Exception String
@@ -41,15 +44,15 @@ getPoints i = do
   player <- getPlayer i
   ms <- gets melds
   let allMelds = [c | (p,c) <- concat (map meldCards' ms), p == player]
-      bonus = if length hand == 0 then exitBonus else 0
-  return $ sum (map meldPoints allMelds) - sum (map handPoints hand) + bonus
+      bonus = if C.null hand then exitBonus else 0
+  return $ sum (map meldPoints allMelds) - C.sumMap handPoints hand + bonus
 
 myPoints :: Int -> GameState -> Int
 myPoints i st =
   let hand = hands st !! i
       player = players st !! i
       allMelds = [c | (p,c) <- concat (map meldCards' $ melds st), p == player]
-  in  sum (map meldPoints allMelds) - sum (map handPoints hand)
+  in  sum (map meldPoints allMelds) - C.sumMap handPoints hand
 
 giveCard :: Int -> Game ()
 giveCard i = do
@@ -61,7 +64,7 @@ giveCard i = do
           return ()
     (card:newDeck) -> do
       hand <- getHand i
-      setHand i $ card: hand
+      setHand i $ C.insert card hand
       lift $ putStrLn $ "Giving card to player #" ++ show i
       modify $ \st -> st {deck = newDeck}
 
@@ -77,7 +80,7 @@ initGame nPlayers handSize = do
 
 emptyState :: [Player] -> GameState
 emptyState players = GS {
-  hands = replicate (length players) [],
+  hands = replicate (length players) C.empty,
   deck = fullPack,
   trash = [],
   melds = [],
@@ -121,9 +124,9 @@ setMeld i meld = do
 
 doTrash i card = do
   hand <- getHand i
-  if card `elem` hand
+  if card `C.elem` hand
     then do
-         setHand i (delete card hand)
+         setHand i (C.delete card hand)
          modify $ \st -> st {trash = card : trash st}
     else fail $ printf "Cannot trash %s: no such card in hand!" (show card)
 
@@ -154,33 +157,33 @@ changeJoker i (clr, meldId) = do
   meld <- getMeld meldId
   (meld', card) <- meldChangeJoker meld clr
   setMeld meldId meld'
-  setHand i $ delete card hand ++ [Joker clr]
+  setHand i $ C.insert (Joker clr) (C.delete card hand)
 
 pickTrash i n = do
   hand <- getHand i
   (newHand, newTrash) <- gets $ splitAt n . trash
-  setHand i $ hand ++ newHand
+  setHand i $ C.insertAll newHand hand
   modify $ \st -> st {trash = newTrash}
 
 newMeld i meld = do
   hand <- getHand i
   let cards = map snd $ meldCards meld
-  if all (`elem` hand) cards
+  if all (`C.elem` hand) cards
     then do
-      setHand i $ hand \\ cards
+      setHand i $ C.deleteAll cards hand
       nmelds <- gets (length . melds)
       let meld' = meld {meldId = nmelds }
       modify $ \st -> st {melds = melds st ++ [meld']}
-    else fail $ "No cards in hand: " ++ show (cards \\ hand)
+    else fail $ "No cards in hand: " ++ show (cards \\ C.toList hand)
 
 addToMeld i (card, meldId) = do
   hand <- getHand i
-  if card `elem` hand
+  if card `C.elem` hand
     then do
       meld <- getMeld meldId
       if card `elem` meldAllowedToAdd meld
         then do
-          setHand i $ delete card hand
+          setHand i $ C.delete card hand
           player <- getPlayer i
           meld' <- meldAdd player meld card
           setMeld meldId meld'
@@ -219,7 +222,7 @@ newHandSize move hand =
       added = toAddToMelds move
       diffCardsNumber = fromMaybe 0 (toPickTrash move) -
                         length allNewMelds - length added - 1
-  in  length hand + diffCardsNumber
+  in  C.size hand + diffCardsNumber
 
 
 checkMove :: Player -> Move -> Game ()
@@ -290,7 +293,7 @@ evalGame action = do
 possibleJokerChanges :: Hand -> Game [(CardColor, MeldId)]
 possibleJokerChanges hand = do
     ms <- gets melds
-    return [(clr,i) | (card,clr,i) <- concatMap getJoker ms, card `elem` hand]
+    return [(clr,i) | (card,clr,i) <- concatMap getJoker ms, card `C.elem` hand]
   where
     getJoker meld =
       case meldGetJokers meld of
@@ -298,15 +301,26 @@ possibleJokerChanges hand = do
         [(color,card)] -> [(card, color, meldId meld)]
         _ -> error $ "Unexpected: more than one joker in meld #" ++ show (meldId meld)
 
-possibleMelds :: Player -> Hand -> [Meld]
-possibleMelds p hand =
-  let subs = concat [kSublists k hand | k <- [3..13]]
-  in  catMaybes $ map (buildMeld p) subs
+possibleMelds :: Player -> C.CardSet -> [Meld]
+possibleMelds p cs =
+  let jokers = C.csJokers cs
+      aSublists list = concat [kSublists k list | k <- [3,4]]
+      sSublists list = concat [kSublists k list | k <- [3..13]]
+      avenueLists = [(value, suits) | (value, suits) <- M.assocs (C.byValue cs), length suits >= 3]
+      avenues = catMaybes $ concat [[buildAvenue p value jokers sublist | sublist <- aSublists suits]
+                                    | (value, suits) <- avenueLists]
+      streetLists = [(values, suit) | (suit, values) <- M.assocs (C.bySuit cs), S.size values >= 3]
+      streets = catMaybes $ concat [[buildStreet p suit jokers sublist | sublist <- sSublists (S.toList values)]
+                                    | (values, suit) <- streetLists]
+  in  streets ++ avenues
+
+--   let subs = concat [kSublists k hand | k <- [3..13]]
+--   in  catMaybes $ map (buildMeld p) subs
 
 possibleAddToMelds :: Hand -> Game [(Card, MeldId)]
 possibleAddToMelds hand = do
     ms <- gets melds
-    return $ concat [ [(card, meldId meld) | card <- meldAllowedToAdd meld, card `elem` hand] | meld <- ms]
+    return $ concat [ [(card, meldId meld) | card <- meldAllowedToAdd meld, card `C.elem` hand] | meld <- ms]
 
 possibleMoves :: Player -> Hand -> Game [Move]
 possibleMoves actor@(Player player) hand = do
@@ -326,17 +340,17 @@ possibleMoves actor@(Player player) hand = do
                                   let newCards = case pt of
                                                    Just n -> take n t
                                                    Nothing -> []
-                                      hand2 = hand1 ++ newCards
+                                      hand2 = C.insertAll newCards hand1
                                   let melds2 = possibleMelds actor hand2
                                   actions <- concatFor (sublists melds2) $ \melds -> do
                                               let diffCards = map snd $ concat $ map meldCards melds
-                                              let hand3 = hand2 \\ diffCards
+                                              let hand3 = C.deleteAll diffCards hand2
                                               allAdds <- possibleAddToMelds hand3
 --                                               lift $ putStrLn $ "AllAdds: " ++ show (sublists allAdds)
                                               actions <- concatFor (sublists allAdds) $ \adds -> do
                                                             let diffCards2 = map fst adds
-                                                            let hand4 = hand3 \\ diffCards2
-                                                            let trashes = [Trash card | card <- hand4]
+                                                            let hand4 = C.deleteAll diffCards2 hand3
+                                                            let trashes = [Trash card | card <- C.toList hand4]
 --                                                             lift $ putStrLn $ "Trashes: " ++ show trashes
                                                             let addActions = [AddToMeld card i | (card,i) <- adds]
                                                             if null addActions

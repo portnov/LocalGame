@@ -10,6 +10,7 @@ import Text.Printf
 import System.IO
 
 import Cards
+import qualified CardSet as C
 import Types
 import Engine
 
@@ -18,7 +19,7 @@ otherPointsDivider = 3
 
 data AI = AI {
     aiId :: Int,
-    aiKnownCards :: M.Map String Hand }
+    aiKnownCards :: M.Map String [Card] }
   deriving (Eq, Typeable)
 
 instance Show AI where
@@ -42,13 +43,13 @@ instance IsPlayer AI where
       hand <- getHand i
       let totalKnownCards = sum $ map length $ M.elems knownCards
           nKnownCardPlayers = M.size knownCards
-      lift $ putStrLn $ printf "AI#%d has %d cards in its hand. It knows %d cards of %d other players." i (length hand) totalKnownCards nKnownCardPlayers
+      lift $ putStrLn $ printf "AI#%d has %d cards in its hand. It knows %d cards of %d other players." i (C.size hand) totalKnownCards nKnownCardPlayers
       lift $ putStr $ "Generating list of possible moves: "
       lift $ hFlush stdout
       moves <- validMoves (Player me) hand
       let nMoves = length moves
       if null moves
-        then if length hand == 1
+        then if C.size hand == 1
                then do
                     lift $ putStrLn $ " single card, put it to trash and exit."
                     return $ Move {
@@ -56,7 +57,7 @@ instance IsPlayer AI where
                               toPickTrash = Nothing,
                               toNewMelds = [],
                               toAddToMelds = [],
-                              toTrash = head hand }
+                              toTrash = head (C.toList hand) }
                else fail "Unexpected: no moves."
         else do
               rs <- mapM go moves
@@ -144,7 +145,7 @@ movePoints i hand knownCards move (Just st) = do
     return result
   where
     go p newHand =
-      let list = possibleMelds p newHand
+      let list = possibleMelds p (C.fromList newHand)
       in  if null list
             then 0
             else maximum $ map eval list
