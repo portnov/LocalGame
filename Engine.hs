@@ -48,12 +48,12 @@ getPoints i = do
       bonus = if C.null hand then exitBonus else 0
   return $ sum (map meldPoints allMelds) - C.sumMap handPoints hand + bonus
 
-myPoints :: Int -> GameState -> Int
-myPoints i st =
+myPoints :: Int -> Int -> GameState -> Int
+myPoints divider i st =
   let hand = hands st !! i
       player = players st !! i
       allMelds = [c | (p,c) <- concat (map meldCards' $ melds st), p == player]
-  in  sum (map meldPoints allMelds) - C.sumMap handPoints hand
+  in  sum (map meldPoints allMelds) - (C.sumMap handPoints hand `div` divider)
 
 giveCard :: Int -> Game ()
 giveCard i = do
@@ -324,9 +324,6 @@ possibleMelds p cs =
       streets = catMaybes $ concat [[buildStreet p suit jokers sublist | sublist <- sSublists (S.toList values)]
                                     | (values, suit) <- streetLists]
   in  streets ++ avenues
-
---   let subs = concat [kSublists k hand | k <- [3..13]]
---   in  catMaybes $ map (buildMeld p) subs
 
 possibleAddToMelds :: Hand -> Game [(Card, MeldId)]
 possibleAddToMelds hand = do

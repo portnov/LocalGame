@@ -15,7 +15,16 @@ import Types
 import Engine
 
 otherPointsDivider :: Int
-otherPointsDivider = 3
+otherPointsDivider = 4
+
+potentialMeldsDivider :: Int
+potentialMeldsDivider = 2
+
+selfHandNobodyCanExitDivider :: Int
+selfHandNobodyCanExitDivider = 2
+
+selfHandOneCanExitDivider :: Int
+selfHandOneCanExitDivider = 1
 
 data AI = AI {
     aiId :: Int,
@@ -64,7 +73,7 @@ instance IsPlayer AI where
               lift $ putStr $ printf " done.\nSelecting best of %d moves: " nMoves
               lift $ hFlush stdout
               currentSt <- get
-              let currentPoints = myPoints i currentSt
+              let currentPoints = myPoints 1 i currentSt
                   tc = if currentPoints >= 0
                          then defaultTC
                          else defaultTC {tcMinPoints = -currentPoints}
@@ -123,33 +132,52 @@ instance IsPlayer AI where
 movePoints :: Int -> Hand -> M.Map String [Card] -> Move -> Maybe GameState -> Game Int
 movePoints _ _ _ move Nothing = fail $ "Unexpected: invalid move generated: " ++ show move
 movePoints i hand knownCards move (Just st) = do
+    me <- getPlayer i
     currentSt <- get
     let newSz = newHandSize move hand
         bonus = if newSz == 0 then exitBonus else 0
-    let currentPoints = myPoints i currentSt
-    let newPoints = myPoints i st
+    let myHandDivider = if oneCanExit st
+                          then selfHandOneCanExitDivider
+                          else selfHandNobodyCanExitDivider
+    let currentPoints = myPoints myHandDivider i currentSt
+    let newPoints = myPoints myHandDivider i st
+        myNewHand = hands st !! i
     let delta = newPoints - currentPoints
     lift $ hFlush stdout
     t <- gets trash
     let newTrash = toTrash move : t
     let otherCards = M.elems knownCards
     ps <- gets players
-    let otherPoints = [go player (newTrash ++ hisHand) | (player, hisHand) <- zip ps otherCards]
+    let otherPoints = [go player (C.fromList $ newTrash ++ hisHand) | (player, hisHand) <- zip ps otherCards]
     let maxOtherPoints = if newSz == 0
                            then 0
                            else if null otherPoints
                                   then 0
                                   else maximum otherPoints
-    let result = delta - (maxOtherPoints `div` otherPointsDivider) + bonus
---     lift $ putStr $ printf "{new hand size %d; δ %d; bonus %d; maxOtherPoints %d; result %d}" newSz delta bonus maxOtherPoints result
+    let myNewHand' = if Joker Black `C.elem` myNewHand
+                       then if Joker Red `C.elem` myNewHand
+                              then myNewHand
+                              else C.insert (Joker Red) myNewHand
+                       else C.insert (Joker Black) myNewHand
+    let potentialPoints = go me myNewHand'
+    let result = delta +
+                 (potentialPoints `div` potentialMeldsDivider) -
+                 (maxOtherPoints `div` otherPointsDivider) +
+                 bonus
+--     lift $ putStr $ printf "{δ %d; maxOtherPoints %d; potentialPoints %d}" delta maxOtherPoints potentialPoints
     return result
   where
     go p newHand =
-      let list = possibleMelds p (C.fromList newHand)
+      let list = possibleMelds p newHand
       in  if null list
             then 0
             else maximum $ map eval list
     eval meld = sum $ map meldPoints $ map snd $ meldCards' meld
+
+    oneCanExit st = let ms i = [ [ c | (Player p, c) <- meldCards' meld, playerIdx p == i ] | meld <- melds st]
+                        canExit i = any (>= 4) $ map length (ms i)
+                        n = length (players st)
+                    in  any canExit [0..n-1]
 
 modifyMe :: Int -> (AI -> AI) -> Game ()
 modifyMe i fn = do
