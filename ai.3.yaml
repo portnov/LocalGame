@@ -6,8 +6,8 @@ debut:
   bonus: 0.1
   my-hand-size-one-can-exit: 0.1
   other-points: 0.3
-avgpoints: 52.74285714285714
-games: 35
+avgpoints: 51.611111111111114
+games: 36
 endspiel:
   my-hand-one-can-exit: 1.0
   my-hand-size-nobody-can-exit: 0.1
