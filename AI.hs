@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, DeriveDataTypeable #-}
+{-# LANGUAGE TypeFamilies, DeriveDataTypeable, RecordWildCards #-}
 
 module AI where
 
@@ -13,6 +13,7 @@ import Cards
 import qualified CardSet as C
 import Types
 import Engine
+import qualified AI.Config as Config
 
 otherPointsDivider :: Int
 otherPointsDivider = 4
@@ -28,11 +29,12 @@ selfHandOneCanExitDivider = 1
 
 data AI = AI {
     aiId :: Int,
-    aiKnownCards :: M.Map String [Card] }
+    aiKnownCards :: M.Map String [Card],
+    aiConfig :: Config.Config }
   deriving (Eq, Typeable)
 
 instance Show AI where
-  show (AI i _) = "AI #" ++ show i
+  show (AI i _ _) = "AI #" ++ show i
 
 data TerminatingCondition = TC {
     tcMaxMoves :: Int,
@@ -44,11 +46,40 @@ data TerminatingCondition = TC {
 defaultTC :: TerminatingCondition
 defaultTC = TC 2000 90 10 1000
 
+data MoveResult = MoveResult {
+    mrCurrentPoints :: Double,
+    mrOneCanExit :: Bool,
+    mrMyMelds :: Double,
+    mrMyHand :: Double,
+    mrMyHandSize :: Double,
+    mrOtherPoints :: Double,
+    mrPotentialPoints :: Double,
+    mrBonus :: Double }
+  deriving (Eq)
+
+instance Show MoveResult where
+  show (MoveResult {..}) =
+    printf "{current %0.1f; my melds %0.1f; my hand %0.1f; other points %0.1f; potential points %0.1f; bonus %0.0f}"
+           mrCurrentPoints mrMyMelds mrMyHand mrOtherPoints mrPotentialPoints mrBonus
+
 instance IsPlayer AI where
   playerName ai = show ai
-  playerIdx (AI i _) = i
+  playerIdx (AI i _ _) = i
 
-  playerSelectMove me@(AI i knownCards) = do
+  initPlayer me@(AI i _ _) = do
+    config <- lift $ Config.load i
+    setPlayer i $ Player $ me {aiConfig = config}
+
+  onEndGame me@(AI i _ config) = do
+    currPoints <- getPoints i
+    let avg = (fromIntegral currPoints + fromIntegral (Config.nGames config) * Config.avgPoints config) / fromIntegral (Config.nGames config + 1)
+    let newConfig = config {
+                     Config.avgPoints = avg,
+                     Config.nGames = Config.nGames config + 1 }
+    lift $ Config.save i newConfig
+    lift $ putStrLn $ printf "AI#%d avg points: %0.2f" i avg
+
+  playerSelectMove me@(AI i knownCards config) = do
       hand <- getHand i
       let totalKnownCards = sum $ map length $ M.elems knownCards
           nKnownCardPlayers = M.size knownCards
@@ -77,39 +108,54 @@ instance IsPlayer AI where
                   tc = if currentPoints >= 0
                          then defaultTC
                          else defaultTC {tcMinPoints = -currentPoints}
-              newPointMs <- iter tc (points hand) $ zip3 [0..] moves rs
-              let newPoints = map snd newPointMs
-                  maxPoints = maximum newPoints
-                  Just moveIdx = findIndex (== maxPoints) newPoints
-                  move = fst $ newPointMs !! moveIdx
-                  seenMoves = length newPointMs
-              lift $ putStrLn $ printf "\nAI#%d selected move #%d (points %d): %s" i (seenMoves - moveIdx - 1) maxPoints (show move)
+              deckLeft <- gets (length . deck)
+              nPlayers <- gets (length . players)
+              let section = if deckLeft <= 4 * nPlayers
+                              then Config.onEndspiel config
+                              else if deckLeft <= (54 - 7 * nPlayers)
+                                     then Config.onMittelspiel config
+                                     else Config.onDebut config
+              lift $ putStr $ "using config section: " ++ show section
+              lift $ hFlush stdout
+              resultMs <- iter tc (points section hand) $ zip3 [0..] moves rs
+              let results = map snd resultMs
+                  maxPoints = maximum results
+                  Just moveIdx = findIndex (== maxPoints) results
+                  move = fst $ resultMs !! moveIdx
+                  seenMoves = length resultMs
+              lift $ putStrLn $ printf "\nAI#%d selected move #%d (points %0.1f): %s" i (seenMoves - moveIdx - 1) maxPoints (show move)
               return move
     where
       go move = do
         r <- evalGame $ evalMove i move
         return r
 
-      points hand j move r = do
-        p <- movePoints i hand knownCards move r
-        lift $ putStr $ printf "[%d:%d]" (j :: Int) p
+      points section hand j move r = do
+        r <- movePoints i hand knownCards move r
+        lift $ putStr $ show r
+        lift $ hFlush stdout
+        let p = evalMovePoints section r
+        lift $ putStr $ printf "[%d:%0.1f]" (j :: Int) p
         lift $ hFlush stdout
         return p
 
+      iter :: TerminatingCondition
+           -> (Int -> Move -> Maybe GameState -> Game Double)
+           -> [(Int, Move, Maybe GameState)] -> Game [(Move, Double)]
       iter tc fn ys = iterGo [] tc fn ys
 
       checkTC tc p j = do
-        if p >= tcMaxPoints tc
+        if round p >= tcMaxPoints tc
           then return True
-          else if j >= tcMovesEdge tc && p >= tcMinPoints tc
+          else if j >= tcMovesEdge tc && round p >= tcMinPoints tc
                  then return True
                  else if j >= tcMaxMoves tc
                         then return True
                         else return False
 
-      iterGo :: [(Move,Int)] -> TerminatingCondition
-             -> (Int -> Move -> Maybe GameState -> Game Int)
-             -> [(Int, Move, Maybe GameState)] -> Game [(Move, Int)]
+      iterGo :: [(Move,Double)] -> TerminatingCondition
+             -> (Int -> Move -> Maybe GameState -> Game Double)
+             -> [(Int, Move, Maybe GameState)] -> Game [(Move, Double)]
       iterGo acc _ _ [] = return acc
       iterGo acc tc fn ((j, move, r):xs) = do
         p <- fn j move r
@@ -118,9 +164,7 @@ instance IsPlayer AI where
           then return ((move,p):acc)
           else iterGo ((move,p):acc) tc fn xs
                  
-
-
-  onMove me@(AI i _) player@(Player p) move = do
+  onMove me@(AI i _ _) player@(Player p) move = do
     if playerName p == playerName me
       then return ()
       else do
@@ -129,20 +173,17 @@ instance IsPlayer AI where
            forM_ (toAddToMelds move) (onAddToMeld i player)
            onTrash i player (toTrash move)
 
-movePoints :: Int -> Hand -> M.Map String [Card] -> Move -> Maybe GameState -> Game Int
+movePoints :: Int -> Hand -> M.Map String [Card] -> Move -> Maybe GameState -> Game MoveResult
 movePoints _ _ _ move Nothing = fail $ "Unexpected: invalid move generated: " ++ show move
 movePoints i hand knownCards move (Just st) = do
     me <- getPlayer i
     currentSt <- get
     let newSz = newHandSize move hand
         bonus = if newSz == 0 then exitBonus else 0
-    let myHandDivider = if oneCanExit st
-                          then selfHandOneCanExitDivider
-                          else selfHandNobodyCanExitDivider
-    let currentPoints = myPoints myHandDivider i currentSt
-    let newPoints = myPoints myHandDivider i st
-        myNewHand = hands st !! i
-    let delta = newPoints - currentPoints
+    let myNewHand = hands st !! i
+        newMeldPoints = myMelds i st
+        newHandPoints = myHandPoints i st
+    let currentPoints = myPoints 1 i currentSt
     lift $ hFlush stdout
     t <- gets trash
     let newTrash = toTrash move : t
@@ -160,24 +201,44 @@ movePoints i hand knownCards move (Just st) = do
                               else C.insert (Joker Red) myNewHand
                        else C.insert (Joker Black) myNewHand
     let potentialPoints = go me myNewHand'
-    let result = delta +
-                 (potentialPoints `div` potentialMeldsDivider) -
-                 (maxOtherPoints `div` otherPointsDivider) +
-                 bonus
---     lift $ putStr $ printf "{δ %d; maxOtherPoints %d; potentialPoints %d}" delta maxOtherPoints potentialPoints
-    return result
+    return $ MoveResult {
+               mrCurrentPoints = fromIntegral currentPoints,
+               mrOneCanExit = oneCanExit st,
+               mrMyMelds = fromIntegral newMeldPoints,
+               mrMyHand = fromIntegral newHandPoints,
+               mrMyHandSize = fromIntegral (C.size myNewHand),
+               mrOtherPoints = fromIntegral maxOtherPoints,
+               mrPotentialPoints = fromIntegral potentialPoints,
+               mrBonus = fromIntegral bonus }
   where
     go p newHand =
       let list = possibleMelds p newHand
+          ms = map fst $ possibleAddToMelds (melds st) newHand
+          addPoints = sum $ map meldPoints ms
       in  if null list
-            then 0
-            else maximum $ map eval list
+            then addPoints
+            else maximum $ addPoints : map eval list
+
     eval meld = sum $ map meldPoints $ map snd $ meldCards' meld
 
     oneCanExit st = let ms i = [ [ c | (Player p, c) <- meldCards' meld, playerIdx p == i ] | meld <- melds st]
                         canExit i = any (>= 4) $ map length (ms i)
                         n = length (players st)
                     in  any canExit [0..n-1]
+
+evalMovePoints :: Config.Section -> MoveResult -> Double
+evalMovePoints (Config.Section {..}) (MoveResult {..}) =
+  let handCoef = if mrOneCanExit
+                   then myHandOneCanExitCoef
+                   else myHandNobodyCanExitCoef
+      handSizeCoef = if mrOneCanExit
+                       then myHandSizeOneCanExitCoef
+                       else myHandSizeNobodyCanExitCoef
+      delta = mrMyMelds - (handCoef * mrMyHand) - mrCurrentPoints
+  in  delta - (otherPointsCoef * mrOtherPoints) +
+      (potentialPointsCoef * mrPotentialPoints) +
+      (handSizeCoef * mrMyHandSize) +
+      (bonusCoef * mrBonus)
 
 modifyMe :: Int -> (AI -> AI) -> Game ()
 modifyMe i fn = do
@@ -187,7 +248,7 @@ modifyMe i fn = do
     Nothing -> fail $ printf "Player #%d is not AI!" i
 
 ai :: Int -> Player
-ai i = Player (AI i M.empty)
+ai i = Player (AI i M.empty Config.defaultConfig)
 
 addKnownCards :: String -> [Card] -> AI -> AI
 addKnownCards p cards st = st { aiKnownCards = M.insertWith (++) p cards (aiKnownCards st) }

@@ -48,6 +48,18 @@ getPoints i = do
       bonus = if C.null hand then exitBonus else 0
   return $ sum (map meldPoints allMelds) - C.sumMap handPoints hand + bonus
 
+myMelds :: Int -> GameState -> Int
+myMelds i st =
+  let hand = hands st !! i
+      player = players st !! i
+      allMelds = [c | (p,c) <- concat (map meldCards' $ melds st), p == player]
+  in  sum (map meldPoints allMelds)
+
+myHandPoints :: Int -> GameState -> Int
+myHandPoints i st =
+  let hand = hands st !! i
+  in  C.sumMap handPoints hand
+
 myPoints :: Int -> Int -> GameState -> Int
 myPoints divider i st =
   let hand = hands st !! i
@@ -67,7 +79,9 @@ giveCard i = do
       hand <- getHand i
       setHand i $ C.insert card hand
       lift $ putStrLn $ "Giving card to player #" ++ show i
+      Player player <- getPlayer i
       modify $ \st -> st {deck = newDeck}
+      onGiveCard player card
 
 initGame :: Int -> Int -> Game ()
 initGame nPlayers handSize = do
@@ -76,7 +90,10 @@ initGame nPlayers handSize = do
     replicateM_ handSize $ do
       forM_ [0..nPlayers-1] $ \playerIdx -> do
         giveCard playerIdx
+    ps <- gets players
     trashOne
+    forM_ ps $ \(Player player) ->
+        initPlayer player
   where
     trashOne = do
       (card:newDeck) <- gets deck
@@ -325,10 +342,14 @@ possibleMelds p cs =
                                     | (values, suit) <- streetLists]
   in  streets ++ avenues
 
-possibleAddToMelds :: Hand -> Game [(Card, MeldId)]
-possibleAddToMelds hand = do
+possibleAddToMeldsM :: Hand -> Game [(Card, MeldId)]
+possibleAddToMeldsM hand = do
     ms <- gets melds
     return $ concat [ [(card, meldId meld) | card <- meldAllowedToAdd meld, card `C.elem` hand] | meld <- ms]
+
+possibleAddToMelds :: [Meld] -> Hand -> [(Card, MeldId)]
+possibleAddToMelds ms hand = 
+    concat [ [(card, meldId meld) | card <- meldAllowedToAdd meld, card `C.elem` hand] | meld <- ms]
 
 possibleMoves :: Player -> Hand -> Game [Move]
 possibleMoves actor@(Player player) hand = do
@@ -353,7 +374,7 @@ possibleMoves actor@(Player player) hand = do
                                   actions <- concatFor (sublists melds2) $ \melds -> do
                                               let diffCards = map snd $ concat $ map meldCards melds
                                               let hand3 = C.deleteAll diffCards hand2
-                                              allAdds <- possibleAddToMelds hand3
+                                              allAdds <- possibleAddToMeldsM hand3
 --                                               lift $ putStrLn $ "AllAdds: " ++ show (sublists allAdds)
                                               actions <- concatFor (sublists allAdds) $ \adds -> do
                                                             let diffCards2 = map fst adds

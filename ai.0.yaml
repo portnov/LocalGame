@@ -1,0 +1,26 @@
+debut:
+  my-hand-one-can-exit: 1.0
+  my-hand-size-nobody-can-exit: 0.3
+  my-hand-nobody-can-exit: 0.5
+  potential-points: 0.7
+  bonus: 0.1
+  my-hand-size-one-can-exit: 0.1
+  other-points: 0.3
+avgpoints: 87.28571428571429
+games: 35
+endspiel:
+  my-hand-one-can-exit: 1.0
+  my-hand-size-nobody-can-exit: 0.1
+  my-hand-nobody-can-exit: 0.9
+  potential-points: 0.3
+  bonus: 1.0
+  my-hand-size-one-can-exit: 0.0
+  other-points: 0.7
+mittelspiel:
+  my-hand-one-can-exit: 1.0
+  my-hand-size-nobody-can-exit: 0.3
+  my-hand-nobody-can-exit: 0.7
+  potential-points: 0.5
+  bonus: 0.7
+  my-hand-size-one-can-exit: 0.0
+  other-points: 0.5

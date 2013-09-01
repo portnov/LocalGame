@@ -35,6 +35,10 @@ instance Show Human where
 instance IsPlayer Human where
   playerName u = show u
   playerIdx (Human i) = i
+
+  onGiveCard (Human i) card = do
+    lift $ putStrLn $ printf "H#%d new card: %s" i (show card)
+
   playerSelectMove u@(Human i) = do
     hand <- getHand i
     lift $ putStrLn $ show u ++ " hand: " ++ show hand
@@ -78,6 +82,8 @@ runGame = do
        st <- get
        let ps = players st
            ns = [0 .. length ps - 1]
+       forM_ (players st) $ \(Player player) -> do
+          onEndGame player
        lift $ putStrLn "End of game. States:"
        lift $ print st
        forM_ ns $ \i -> do

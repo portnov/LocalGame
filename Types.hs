@@ -295,7 +295,18 @@ setelt i v (x:xs)
 class Typeable p => IsPlayer p where
   playerName :: p -> String
   playerIdx :: p -> Int
+
+  initPlayer :: p -> Game ()
+  initPlayer _ = return ()
+
+  onGiveCard :: p -> Card -> Game ()
+  onGiveCard _ _ = return ()
+
+  onEndGame :: p -> Game ()
+  onEndGame _ = return ()
+
   playerSelectMove :: p -> Game Move
+
   onMove :: p -> Player -> Move -> Game ()
   onMove _ _ _ = return ()
 
