@@ -1,0 +1,45 @@
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>WS test</title>
+    <script src="JSON-js/json2.js"></script>
+    <script>
+      // создать подключение
+window.socket = new WebSocket("ws://localhost:9160");
+
+window.socket.onopen = function(event) {
+  window.socket.send(JSON.stringify({action: "hello", name: "username"}));
+};
+ 
+// отправить сообщение из формы publish
+window.sendMessage = function() {
+  var msg = document.getElementsByName("message")[0].value;
+  var outgoingMessage = {action: "event", text: msg};
+  var str = JSON.stringify(outgoingMessage);
+  window.socket.send(str);
+  console.log(str);
+}
+ 
+// обработчик входящих сообщений
+window.socket.onmessage = function(event) {
+  var incomingMessage = event.data;
+  showMessage(incomingMessage);
+};
+ 
+// показать сообщение в div#subscribe
+function showMessage(message) {
+  var messageElem = document.createElement('div');
+  messageElem.appendChild(document.createTextNode(message));
+  document.getElementById('subscribe').appendChild(messageElem);
+}
+    </script>
+  </head>
+  <body>
+    <h1>WS test</h1>
+    <form name="publish">
+      <input type="text" name="message"/>
+      <input type="button" onclick="sendMessage();" value="Send"/>
+    </form>
+    <div id="subscribe"></div>
+  </body>
+</html>
