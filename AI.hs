@@ -68,7 +68,9 @@ instance IsPlayer AI where
 
   initPlayer me@(AI i _ _) = do
     config <- lift $ Config.load i
-    setPlayer i $ Player $ me {aiConfig = config}
+    ps <- gets players
+    let knownCards = M.fromList [(playerName p, []) | Player p <- ps, playerIdx p /= i]
+    setPlayer i $ Player $ me {aiConfig = config, aiKnownCards = knownCards}
 
   onEndGame me@(AI i _ config) = do
     currPoints <- getPoints i
@@ -82,8 +84,7 @@ instance IsPlayer AI where
   playerSelectMove me@(AI i knownCards config) = do
       hand <- getHand i
       let totalKnownCards = sum $ map length $ M.elems knownCards
-          nKnownCardPlayers = M.size knownCards
-      lift $ putStrLn $ printf "AI#%d has %d cards in its hand. It knows %d cards of %d other players." i (C.size hand) totalKnownCards nKnownCardPlayers
+      lift $ putStrLn $ printf "AI#%d has %d cards in its hand. It knows %d cards of other players." i (C.size hand) totalKnownCards 
       lift $ putStr $ "Generating list of possible moves: "
       lift $ hFlush stdout
       moves <- validMoves (Player me) hand
@@ -188,18 +189,22 @@ movePoints i hand knownCards move (Just st) = do
     t <- gets trash
     let newTrash = toTrash move : t
     let otherCards = M.elems knownCards
+    let addJoker hand = if Joker Black `C.elem` hand
+                         then if Joker Red `C.elem` hand
+                                then hand
+                                else C.insert (Joker Red) hand
+                         else C.insert (Joker Black) hand
     ps <- gets players
-    let otherPoints = [go player (C.fromList $ newTrash ++ hisHand) | (player, hisHand) <- zip ps otherCards]
+    let otherPlayers = [actor | actor@(Player p) <- ps, playerIdx p /= i]
+    let otherPoints = [go player (addJoker $ C.fromList $ newTrash ++ hisHand) | (player, hisHand) <- zip ps otherCards]
+    lift $ putStr $ show otherPoints
     let maxOtherPoints = if newSz == 0
                            then 0
                            else if null otherPoints
                                   then 0
                                   else maximum otherPoints
-    let myNewHand' = if Joker Black `C.elem` myNewHand
-                       then if Joker Red `C.elem` myNewHand
-                              then myNewHand
-                              else C.insert (Joker Red) myNewHand
-                       else C.insert (Joker Black) myNewHand
+
+    let myNewHand' = addJoker myNewHand
     let potentialPoints = go me myNewHand'
     return $ MoveResult {
                mrCurrentPoints = fromIntegral currentPoints,
@@ -254,12 +259,7 @@ addKnownCards :: String -> [Card] -> AI -> AI
 addKnownCards p cards st = st { aiKnownCards = M.insertWith (++) p cards (aiKnownCards st) }
 
 dropKnownCard :: String -> Card -> AI -> AI
-dropKnownCard p card st = st { aiKnownCards = M.update update p (aiKnownCards st) }
-  where
-    update list = let res = delete card list
-                  in  if null res
-                        then Nothing
-                        else Just res
+dropKnownCard p card st = st { aiKnownCards = M.update (Just . delete card) p (aiKnownCards st) }
 
 onPickTrash :: Int -> Player -> Int -> Game ()
 onPickTrash me (Player p) n = do

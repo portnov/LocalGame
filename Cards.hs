@@ -43,6 +43,10 @@ instance Enum CardValue where
   toEnum 14 = Ace
   toEnum n = error $ "Unexpected: invalid card value: " ++ show n
 
+  enumFromTo from to
+    | to >= from = map toEnum [fromEnum from .. fromEnum to]
+    | otherwise = map toEnum $ [fromEnum from .. 14] ++ [2 .. fromEnum to]
+
 instance Bounded CardValue where
   minBound = N 2
   maxBound = Ace

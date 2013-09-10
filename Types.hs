@@ -18,6 +18,34 @@ thisPackType = PackType 2 True
 
 fullPack = orderedPack thisPackType
 
+sortDiff :: Ord a => (a -> a -> Maybe Bool) -> [a] -> Maybe [a]
+sortDiff _ [] = Just []
+sortDiff diff list = go [] list
+  where
+    go acc [] = Just acc
+    go [] xs = let m = maximum xs
+               in  go [m] (delete m xs)
+    go acc xs =
+      case find (\x -> diff x (last acc) == Just True) xs of
+        Just x -> go (acc ++ [x]) (delete x xs)
+        Nothing -> case find (\x -> diff x (head acc) == Just False) xs of
+                     Just x -> go (x:acc) (delete x xs)
+                     Nothing -> Nothing
+      
+diffC :: Int -> Int -> Maybe Bool
+diffC 14 2 = Just False
+diffC 2 14 = Just True
+diffC 13 2 = Just False
+diffC 2 13 = Just True
+diffC 14 3 = Just False
+diffC 3 14 = Just True
+diffC x y
+  | y-x == 1 = Just False
+  | y-x == 2 = Just False
+  | x-y == 1 = Just True
+  | x-y == 2 = Just True
+  | otherwise = Nothing
+
 type Hand = C.CardSet
 type Deck = [Card]
 type Trash = [Card]
@@ -82,6 +110,9 @@ buildStreet player ssuit jokers nojokers = do
     run = do
       let njokers = length jokers
       let sorted = sort $ map fromEnum nojokers
+--       sorted <- case sortDiff diffC (sort $ map fromEnum nojokers) of
+--                   Nothing -> failure $ "Cards do not form a street"
+--                   Just s -> return s
       let diffs = zipWith (-) (tail sorted) sorted
       let ncards = length jokers + length nojokers
       if njokers == 0
@@ -142,7 +173,7 @@ buildAvenue player cvalue [] suits = do
                  meldOwners  = replicate ncards player,
                  meldJokers  = replicate ncards Nothing }
 buildAvenue player cvalue [jokerColor] suits = do
-      let ncards = length suits
+      let ncards = length suits + 1
       js <- case [Clubs, Diamonds, Hearts, Spades] \\ suits of
               [] -> failure $ "All suits are used, no place for joker"
               (s:_) -> return s
