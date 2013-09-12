@@ -114,7 +114,7 @@ $(document).ready(function(){
 
     var onPickTrash = function(n) {
         var sz = $('#trash').data("size");
-        for (var i = sz-n; i <= sz; i++) {
+        for (var i = sz-n+1; i <= sz; i++) {
           var elem = $('#trash').find("#trashcard" + i);
           elem.remove();
         }
@@ -174,6 +174,7 @@ $(document).ready(function(){
       $('#meld'+meldId).find(".card").each(function(i, elem) {
             $('#hand').append(elem);
           });
+      $('#meld'+meldId).remove();
     };
 
     var removeMeldCard = function(meldId, card) {
@@ -219,6 +220,7 @@ $(document).ready(function(){
       } else if (msg.event == 'ok') {
         $('#status').text("OK");
       } else if (msg.event == 'error') {
+        window.newMelds = [];
         $('#status').text(msg.message);
         var sz = msg.actions.length;
         for (var i = 0; i < sz; i ++) {
@@ -301,7 +303,7 @@ $(document).ready(function(){
                   window.pickedCards.push(elem.data("card"));
                 }
                 $('#trash').data("size", n);
-                sendPickTrash(sz-n);
+                sendPickTrash(sz-n+1);
               }
             }
     });
