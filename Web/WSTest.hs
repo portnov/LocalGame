@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies #-}
 
 import Control.Monad
 import Control.Exception
@@ -40,7 +40,11 @@ instance FromJSON Message where
   parseJSON x = fail $ "Invalid object for event: " ++ show x
 
 instance Protocol Message where
-  onClientMessage sink msg = do
+  type ProtocolState Message = ()
+
+  initProtocol _ = return ()
+
+  onClientMessage sink msg _ = do
     putStrLn $ "Message from client: " ++ show msg
     sendMessage sink OK
 
@@ -57,7 +61,7 @@ main :: IO ()
 main = do
   chan <- newChan
   forkIO $ input chan
-  runWS defaultWSConfig chan
+  runWS defaultWSConfig chan ()
 
 input chan = do
   putStr "Input: "

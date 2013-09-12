@@ -87,11 +87,17 @@ initGame :: Int -> Int -> Game ()
 initGame nPlayers handSize = do
     pack <- lift $ shuffle fullPack
     modify $ \st -> st {deck = pack}
+    ps <- gets players
+    forM_ ps $ \(Player player) ->
+        beforeGiveCards player
     replicateM_ handSize $ do
       forM_ [0..nPlayers-1] $ \playerIdx -> do
         giveCard playerIdx
     ps <- gets players
-    trashOne
+    initialTrash <- trashOne
+    forM_ ps $ \(Player player) ->
+        onInitialTrash player initialTrash
+    ps <- gets players
     forM_ ps $ \(Player player) ->
         initPlayer player
   where
@@ -104,7 +110,9 @@ initGame nPlayers handSize = do
              let (here, there) = splitAt i newDeck
              modify $ \st -> st {deck = here ++ [card] ++ there}
              trashOne
-        else modify $ \st -> st {deck = newDeck, trash = [card]}
+        else do
+             modify $ \st -> st {deck = newDeck, trash = [card]}
+             return card
 
 emptyState :: [Player] -> GameState
 emptyState players = GS {
@@ -281,6 +289,10 @@ checkMove actor@(Player player) move = do
            then fail "You can not exit yet."
            else return ()
 
+checkMoveM :: Player -> Move -> Game (Maybe String)
+checkMoveM player move = do
+  atomicallyTryM (checkMove player move)
+
 isMoveValid :: Player -> Move -> Game Bool
 isMoveValid player move = do
   r <- atomicallyTry False (checkMove player move)
@@ -306,6 +318,18 @@ atomicallyTry toPrintExc action = do
                     lift $ putStrLn $ "Error: " ++ show (err :: E.SomeException)
                 put st
                 return False
+
+atomicallyTryM :: Game () -> Game (Maybe String)
+atomicallyTryM action = do
+  st <- get
+  r <- lift $ E.try $ execStateT action st
+  case r of
+    Right st' -> do
+                 put st'
+                 return Nothing
+    Left err -> do
+                put st
+                return $ Just $ show (err :: E.SomeException)
 
 evalGame :: Game () -> Game (Maybe GameState)
 evalGame action = do
@@ -409,7 +433,7 @@ possibleMoves actor@(Player player) hand = do
                      (maybeToList pick) ++ 
                      (maybeToList newMeld) ++
                      (maybeToList add) ++ [trash]
-    buildMove actionList
+    buildMove actor actionList
 
 validMoves :: Player -> Hand -> Game [Move]
 validMoves player hand = do

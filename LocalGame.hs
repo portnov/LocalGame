@@ -14,11 +14,12 @@ import Types
 import Parser
 import Engine
 import AI
+import qualified Web.Client as W
 
 readMove :: Player -> String -> Game Move
 readMove p str =
   case runParser (moveActions p) () "<input>" str of
-    Right res -> buildMove res
+    Right res -> buildMove p res
     Left err -> do
                 lift $ putStrLn $ "Error: " ++ show err
                 lift $ putStr $ show p ++ " move: "
@@ -113,6 +114,7 @@ runPlayer i actor@(Player player) = go 3
 makePlayer :: String -> Int -> Player
 makePlayer "ai" i = ai i
 makePlayer "human" i = human i
+makePlayer "web" i = W.webPlayer i
 makePlayer str _ = error $ "Unknown player type: " ++ str
 
 main = do

@@ -45,8 +45,8 @@ pValue = try numeric <|> icon
         'A' -> return Ace
         _ -> fail $ "Unknown icon: " ++ [s]
 
-card :: Parser Card
-card = try joker <|> usualCard
+pCard :: Parser Card
+pCard = try joker <|> usualCard
   where
     joker = try (string "RJ" >> return (Joker Red)) <|>
                 (string "BJ" >> return (Joker Black))
@@ -92,7 +92,7 @@ pNewMeld :: Player -> Parser MoveAction
 pNewMeld p = do
   string "meld"
   spaces
-  cards <- card `sepEndBy` spaces
+  cards <- pCard `sepEndBy` spaces
   meld <- buildMeld p cards
   return $ NewMeld meld
 
@@ -100,7 +100,7 @@ pAddToMeld :: Player -> Parser MoveAction
 pAddToMeld p = do
   string "add"
   spaces
-  c <- card
+  c <- pCard
   spaces
   n <- number
   return $ AddToMeld c n
@@ -109,7 +109,7 @@ pTrash :: Parser MoveAction
 pTrash = do
   string "trash"
   spaces
-  c <- card
+  c <- pCard
   return (Trash c)
 
 moveActions :: Player -> Parser [MoveAction]
@@ -120,7 +120,7 @@ dummy = Player (Dummy 0)
 
 readCards :: String -> Either String [Card]
 readCards str =
-  case runParser (card `sepEndBy` spaces) () "<input>" str of
+  case runParser (pCard `sepEndBy` spaces) () "<input>" str of
     Right res -> return res
     Left e -> failure $ show e
 

@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, TypeFamilies #-}
 
 module Web.WebSockets where
 
@@ -39,15 +39,25 @@ instance ToJSON WSConfig where
   toJSON wsc = object ["host" .= wscHost wsc, "port" .= wscPort wsc]
 
 class (FromJSON message, ToJSON message, Show message) => Protocol message where
-  onClientMessage :: Sink -> message -> IO ()
+  type ProtocolState message
+
+  initProtocol :: message -> IO ()
+
+  onClientMessage :: Sink -> message -> ProtocolState message -> IO ()
+
+  onInvalidMessage :: String -> String -> IO message
+  onInvalidMessage string err =
+    fail $ "Failed parsing `" ++ string ++ "': " ++ err
+
   getHelloUsername :: message -> Maybe Text
   isQuit :: message -> Bool
 
-runWS :: (Protocol message) => WSConfig -> Chan message -> IO ()
-runWS cfg chan = do
+runWS :: forall message. (Protocol message) => WSConfig -> Chan message -> ProtocolState message -> IO ()
+runWS cfg chan st = do
   var <- newMVar M.empty
+  initProtocol (undefined :: message)
   forkIO $ sendEvents var chan
-  runServer (wscHost cfg) (wscPort cfg) $ application var chan
+  runServer (wscHost cfg) (wscPort cfg) $ application var st chan 
 
 -- | Provides a simple server.
 runServer :: WS.Protocol p
@@ -76,8 +86,13 @@ runServer host port ws = S.withSocketsDo $ do
       print e
       S.sClose sock
 
-application :: forall message. Protocol message => MVar Clients -> Chan message -> WS.Request -> WS.WebSockets WS.Hybi00 ()
-application var chan rq = do
+application :: forall message. Protocol message
+             => MVar Clients
+             -> ProtocolState message
+             -> Chan message
+             -> WS.Request
+             -> WS.WebSockets WS.Hybi00 ()
+application var mchan _ rq = do
     WS.acceptRequest rq
     liftIO $ print rq
     text <- WS.receiveData
@@ -86,18 +101,18 @@ application var chan rq = do
     case getHelloUsername (msg :: message) of
       Just name -> do
         liftIO $ putStrLn $ "Client sent Hello."
+        liftIO $ addClient var name sink
+        -- liftIO $ onClientMessage sink msg mchan
         talk var name sink
-      Nothing ->
-        if isQuit msg
-          then liftIO $ putStrLn "Client send Quit, quiting."
-          else liftIO $ onClientMessage sink msg
+      Nothing -> do
+        liftIO $ putStrLn "Client did not sent Hello, quiting."
   where
     talk var name sink = do
-      liftIO $ addClient var name sink
       flip WS.catchWsError catchDisconnect $  forever $ do
+        liftIO $ putStrLn $ "Waiting data from client..."
         text <- WS.receiveData
         msg <- parseText text
-        liftIO $ onClientMessage sink (msg :: message)
+        liftIO $ onClientMessage sink (msg :: message) mchan
       where
         catchDisconnect e = case fromException e of
             Just WS.ConnectionClosed -> liftIO $ removeClient var name
@@ -137,13 +152,13 @@ parseStr str = do
     Left err -> fail err
     Right res -> return res
 
-parseText :: (MonadIO m, FromJSON message) => Text -> m message
+parseText :: forall message m. (MonadIO m, Protocol message) => Text -> m message
 parseText text = do
   let str = T.unpack text
   liftIO $ putStrLn $ "Client msg: " ++ str
   let bstr = L.pack $ map (fromIntegral . ord) str
   case eitherDecode bstr of
-    Left err -> fail err
+    Left err -> liftIO $ onInvalidMessage str err
     Right res -> return res
 
 encodeMsg :: ToJSON message => message -> Text

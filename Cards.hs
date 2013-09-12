@@ -14,6 +14,12 @@ instance Show Suit where
   show Hearts   = "♥"
   show Spades   = "♠"
 
+showSuit :: Suit -> String
+showSuit Clubs = "C"
+showSuit Diamonds = "D"
+showSuit Hearts = "H"
+showSuit Spades = "S"
+
 data CardValue =
     N Int
   | Jack

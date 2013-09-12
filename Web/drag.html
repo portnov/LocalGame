@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        <title>Drag & Drop test</title>
+        <script type="text/javascript" src="jquery-1.10.2.min.js"></script>
+        <script type="text/javascript" src="jquery-ui.js"></script>
+        <script src="JSON-js/json2.js"></script>
+       
+        <style type="text/css">
+        .drop,
+        .drop2{
+                border:1px solid black;
+                width:5em;
+                height:5em;
+                padding:0.5em;
+        }
+       
+        .card {
+          float: left;
+          margin: 0.1em;
+        }
+
+        .meld, .hand, .trash {
+        }
+
+        .trash {
+          text-align: right;
+        }
+
+        .trash .card {
+          float: right;
+        }
+
+        .container {
+          border: 1px black solid;
+          width: 90%;
+          height: 150px;
+          background: #eee;
+          margin: 0.5em;
+          padding: 0.5em;
+        }
+
+        .container h2 {
+          padding: 0;
+          margin: 0;
+          text-align: left;
+          border-bottom: 1px gray solid;
+        }
+
+        div.meld-owner {
+          position: relative;
+          text-align: center;
+        }
+
+        div#melds {
+          border: 1px gray solid;
+          overflow: auto;
+        }
+
+        div#console {
+          border: 1px gray solid;
+          max-height: 20ex;
+          overflow: auto;
+        }
+
+        </style>
+</head>
+<body>
+ 
+<script type="text/javascript">
+
+$(document).ready(function(){
+    window.pickedCards = [];
+    window.newMelds = [];
+
+    window.socket = new WebSocket("ws://localhost:9160");
+
+    window.socket.onopen = function(event) {
+      window.socket.send(JSON.stringify({event: "hello", name: "username"}));
+    };
+
+    var log = function(text) {
+      $('#console').append("<p>" + text + "</p>");
+    };
+
+    var cardDraggable = {
+            helper : 'clone',
+            opacity : 0.3
+    };
+
+    var newCard = function(card) {
+      var elem = $("<div class='drag card' data-card='" + card + "'><img src='cards/"+card+".png'></img></div>");
+      elem.draggable(cardDraggable);
+      return elem;
+    };
+
+    var giveCard = function(card) {
+      var elem = newCard(card);
+      $('#hand').append(elem);
+    };
+
+    var addToTrash = function(cardElem) {
+        var size = $('#trash').data("size");
+        var n = size+1;
+        $('#trash').append(cardElem.attr("id", "trashcard"+n).data("n",n));
+        $('#trash').data("size", n);
+    };
+
+    var onTrash = function(card) {
+      var elem = newCard(card);
+      addToTrash(elem);
+    };
+
+    var onPickTrash = function(n) {
+        var sz = $('#trash').data("size");
+        for (var i = sz-n; i <= sz; i++) {
+          var elem = $('#trash').find("#trashcard" + i);
+          elem.remove();
+        }
+        $('#trash').data('size', sz-n);
+    };
+
+    var addMeld = function() {
+      var size = $('#melds').data("size");
+      var meldId = size;
+      var meld = $("<div class='meld drop container' id='meld"+meldId+"'><h2>Meld #"+meldId+"</h2></div>");
+      meld.data("meld", meldId);
+      meld.droppable(meldDropable);
+      $('#melds').append(meld);
+      $('#melds').data("size", size+1);
+      return meld;
+    };
+
+    var onMeld = function(playerId, meldId, card) {
+      var meld = $('#meld'+meldId);
+      if (meld.length == 0) {
+        log("No meld #"+meldId+" yet, creating new one.");
+        meld = addMeld();
+      } else {
+        log("Meld #"+meldId+" found.");
+      }
+      var cardElem = newCard(card);
+      meld.append(cardElem.append("<div class='meld-owner'>Player #" + playerId + "</div>"));
+    };
+
+    var doLock = function() {
+      $('#go').attr("disabled", "disabled");
+    };
+
+    var doUnlock = function() {
+      $('#go').removeAttr("disabled");
+      $('#status').text("Your move");
+      window.pickedCards = [];
+    };
+
+    var undoTrash = function(card) {
+      var sz = $('#trash').data("size");
+      var cardElem = $('#trash').find("[data-card='"+card+"']");
+      $('#hand').append(cardElem);
+      $('#trash').data("size", sz-1);
+    };
+
+    var undoPickTrash = function() {
+      var len = window.pickedCards.length;
+      for (var i = 0; i < len; i++) {
+        var card = window.pickedCards[i];
+        addToTrash(newCard(card));
+        $('#hand').find("[data-card='"+card+"']").remove();
+      }
+    };
+
+    var removeMeld = function(meldId) {
+      $('#meld'+meldId).find(".card").each(function(i, elem) {
+            $('#hand').append(elem);
+          });
+    };
+
+    var removeMeldCard = function(meldId, card) {
+      var cardElem = $('#meld'+meldId).find("[data-card='"+card+"']");
+      $('#hand').append(cardElem);
+    };
+
+    var undoAction = function(msg) {
+      if (msg.type == 'trash') {
+        undoTrash(msg.card);
+      } else if (msg.type == 'pick') {
+        undoPickTrash();
+      } else if (msg.type == 'meld') {
+        removeMeld(msg.meld);
+      } else if (msg.type == 'add') {
+        removeMeldCard(msg.meld, msg.card);
+      }
+    };
+
+    window.socket.onmessage = function(event) {
+      var incomingMessage = event.data;
+      log(incomingMessage);
+      console.log(incomingMessage);
+      var msg = JSON.parse(incomingMessage);
+      if (msg.event == 'give') {
+        giveCard(msg.card);
+      } else if (msg.event == 'move') {
+        $('#move' + msg.player).text(JSON.stringify(msg));
+      } else if (msg.event == 'action') {
+        if (msg.type == 'trash') {
+          onTrash(msg.card);
+        } else if (msg.type == 'pick') {
+          onPickTrash(msg.n);
+        } else if (msg.type == 'meld') {
+          onMeld(msg.player, msg.meld, msg.card);
+        } else if (msg.type == 'add') {
+          onMeld(msg.player, msg.meld, msg.card);
+        }
+      } else if (msg.event == 'lock') {
+        doLock();
+      } else if (msg.event == 'unlock') {
+        doUnlock();
+      } else if (msg.event == 'ok') {
+        $('#status').text("OK");
+      } else if (msg.event == 'error') {
+        $('#status').text(msg.message);
+        var sz = msg.actions.length;
+        for (var i = 0; i < sz; i ++) {
+          undoAction(msg.actions[i]);
+        }
+      }
+    };
+
+    var sendAddToMeld = function(meldId, name) {
+      window.socket.send(JSON.stringify({
+            event: "action",
+            player: 0,
+            type: "add",
+            card: name,
+            meld: meldId
+          }));
+    };
+
+    var sendMeldCard = function(meldId, name) {
+      window.socket.send(JSON.stringify({
+            event: "action",
+            player: 0,
+            type: "meld",
+            card: name,
+            meld: meldId
+          }));
+    };
+
+    var sendTrash = function(card) {
+      window.socket.send(JSON.stringify({
+            event: "action",
+            player: 0,
+            type: "trash",
+            card: card
+          }));
+      log("Trash: " + card);
+    };
+
+    var sendPickTrash = function(count) {
+      window.socket.send(JSON.stringify({
+              event: "action",
+              player: 0,
+              type: "pick",
+              n: count
+            }));
+    };
+
+    $('div.drag').draggable(cardDraggable);
+
+    var meldDropable = {
+            tolerance : 'fit',
+            accept : 'div.drag',
+            drop : function(event, ui) {
+              if (ui.draggable.parent().hasClass("hand")) {
+                $(this).append(ui.draggable.append("<div class='meld-owner'>Human</div>"));
+                var n = $(this).data("meld");
+                if (window.newMelds.indexOf(n) == -1) {
+                  sendAddToMeld(n, ui.draggable.data("card"));
+                } else {
+                  sendMeldCard(n, ui.draggable.data("card"));
+                }
+              }
+            }
+    };
+   
+    $('div.meld').droppable(meldDropable);
+
+    $('div.hand').droppable({
+            tolerance : 'fit',
+            accept : 'div.drag',
+            drop : function(event, ui) {
+              var n = ui.draggable.data("n");
+              if (null == n) {
+                console.log("No n");
+              } else {
+                var sz = $('#trash').data("size");
+                for (var i = n; i <= sz; i++) {
+                  var elem = $('div.trash').find("#trashcard" + i);
+                  $(this).append(elem);
+                  window.pickedCards.push(elem.data("card"));
+                }
+                $('#trash').data("size", n);
+                sendPickTrash(sz-n);
+              }
+            }
+    });
+    $('div.trash').droppable({
+            tolerance : 'fit',
+            accept : 'div.drag',
+            drop : function(event, ui) {
+              if (ui.draggable.parent().hasClass("hand")) {
+                addToTrash(ui.draggable);
+                sendTrash(ui.draggable.data("card"));
+              }
+            }
+    });
+
+    $('#trash').find('.card').click(function() {
+          log("Click: trash: " + $(this).data("n"));
+        });
+
+    $('#addmeld').click( function() {
+      var meld = addMeld();
+      window.newMelds.push(meld.data("meld"));
+    });
+
+    $('#go').click(function() {
+        window.socket.send(JSON.stringify({
+              event: "ok"
+            }));
+        window.newMelds = [];
+    });
+
+    $('#start').click(function() {
+        window.socket.send(JSON.stringify({
+              event: "start"
+            }));
+        $(this).remove();
+        $('#go').removeAttr("disabled");
+        $('#addmeld').removeAttr("disabled");
+    });
+});
+
+</script>
+
+<div class="container">
+  <h2>AI hand</h2>
+  <img src="cards/back.png" class="card" />
+</div>
+
+<p id='move1'>
+</div>
+
+<div class="trash drop container" data-size="0" id='trash'>
+  <h2>Trash</h2>
+  <img src="cards/back.png" class="card" />
+</div>
+
+<input type="button" id="addmeld" value="Add meld" disabled="disabled"/>
+
+<div id="melds" data-size="0">
+</div>
+
+<h2 id="status">Press «Start!» to begin</h2>
+
+<div class="hand container" id='hand'>
+  <h2>Your hand</h2>
+  <!--
+  <div class="drag card" data-card="2S"><img src="cards/2S.png"/></div>
+  <div class="drag card" data-card="3S"><img src="cards/3S.png"/></div>
+  <div class="drag card" data-card="4S"><img src="cards/4S.png"/></div>
+  <div class="drag card" data-card="2D"><img src="cards/2D.png"/></div>
+  <div class="drag card" data-card="2C"><img src="cards/2C.png"/></div>
+  -->
+</div>
+
+<input type="button" id="start" value="Start!"/>
+<input type="button" id="go" value="Move!" disabled="disabled"/>
+
+<div id="console">
+</div>
+
+</body>
+</html>
+

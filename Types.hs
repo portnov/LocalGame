@@ -1,4 +1,4 @@
-{-# LANGUAGE ExistentialQuantification, TypeFamilies, GADTs, TypeOperators, FlexibleContexts, DeriveDataTypeable #-}
+{-# LANGUAGE ExistentialQuantification, TypeFamilies, GADTs, TypeOperators, FlexibleContexts, DeriveDataTypeable, ScopedTypeVariables #-}
 
 module Types where
 
@@ -6,6 +6,7 @@ import Control.Monad
 import Control.Monad.State
 import Control.Failure
 import Data.Functor
+import qualified Data.Map as M
 import Text.Printf
 import Data.List
 import Data.Maybe
@@ -330,6 +331,12 @@ class Typeable p => IsPlayer p where
   initPlayer :: p -> Game ()
   initPlayer _ = return ()
 
+  beforeGiveCards :: p -> Game ()
+  beforeGiveCards _ = return ()
+  
+  onInitialTrash :: p -> Card -> Game ()
+  onInitialTrash _ _ = return ()
+
   onGiveCard :: p -> Card -> Game ()
   onGiveCard _ _ = return ()
 
@@ -361,6 +368,7 @@ data MoveAction =
     ChangeJoker CardColor MeldId
   | PickTrash Int
   | NewMeld Meld
+  | MeldCard Int Card
   | AddToMeld Card MeldId
   | Trash Card
   deriving (Eq)
@@ -369,6 +377,7 @@ instance Show MoveAction where
   show (ChangeJoker clr i) = printf "Change %s Joker from meld #%d" (show clr) i
   show (PickTrash n) = printf "Pick last %d cards from trash" n
   show (NewMeld meld) = "Create new meld: " ++ show meld
+  show (MeldCard i card) = printf "Try to put %s to new meld #%d" (show card) i
   show (AddToMeld card i) = printf "Add %s to meld #%d" (show card) i
   show (Trash card) = "Trash " ++ show card
 
@@ -392,18 +401,27 @@ instance Show Move where
       goMeld meld = "New meld:\n" ++ show meld
       goAdd (card,i) = printf "Add %s to meld #%d" (show card) i
 
-buildMove :: (Monad m, Failure String m) => [MoveAction] -> m Move
-buildMove mas =
+buildMove :: forall m. (Monad m, Failure String m) => Player -> [MoveAction] -> m Move
+buildMove player mas =
   case [c | Trash c <- mas] of
     [] -> failure $ "One card must be trashed"
-    [_] -> return $ foldl add emptyMove mas
+    [_] -> do
+           (newMeldCards, move) <- foldM add (M.empty, emptyMove) mas
+           newMelds <- forM (M.elems newMeldCards) $ \cards ->
+                         buildMeld player cards
+           return $ move {toNewMelds = newMelds ++ toNewMelds move}
+
     _ -> failure $ "Only one card can be trashed"
   where
-    add move (ChangeJoker clr i) = move {toChangeJoker = Just (clr, i)}
-    add move (PickTrash n) = move {toPickTrash = Just n}
-    add move (NewMeld m) = move {toNewMelds = m : toNewMelds move}
-    add move (AddToMeld card i) = move {toAddToMelds = (card,i) : toAddToMelds move}
-    add move (Trash card) = move {toTrash = card}
+    add :: (M.Map Int [Card], Move) -> MoveAction -> m (M.Map Int [Card], Move)
+    add (m,move) (ChangeJoker clr i) = return $ (m, move {toChangeJoker = Just (clr, i)})
+    add (m,move) (PickTrash n) = return $ (m, move {toPickTrash = Just n})
+    add (m,move) (NewMeld meld) = return $ (m, move {toNewMelds = meld : toNewMelds move})
+    add (m,move) (AddToMeld card i) = return $ (m, move {toAddToMelds = (card,i) : toAddToMelds move})
+    add (m,move) (Trash card) = return $ (m, move {toTrash = card})
+    add (m,move) (MeldCard i card) =
+      let m' = M.insertWith (++) i [card] m
+      in  return $ (m', move)
 
     emptyMove = Move Nothing Nothing [] [] (Joker Red)
 

@@ -5,3 +5,6 @@ LocalGame
 SimpleGame
 Web/WSTest
 Web/JSON-js/
+*.zip
+Web/jquery-ui-1.10.3/
+*.prof
