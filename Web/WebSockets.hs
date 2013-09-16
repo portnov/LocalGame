@@ -38,6 +38,9 @@ instance FromJSON WSConfig where
 instance ToJSON WSConfig where
   toJSON wsc = object ["host" .= wscHost wsc, "port" .= wscPort wsc]
 
+data Destination = Broadcast | Username Text
+  deriving (Eq, Show)
+
 class (FromJSON message, ToJSON message, Show message) => Protocol message where
   type ProtocolState message
 
@@ -52,7 +55,7 @@ class (FromJSON message, ToJSON message, Show message) => Protocol message where
   getHelloUsername :: message -> Maybe Text
   isQuit :: message -> Bool
 
-runWS :: forall message. (Protocol message) => WSConfig -> Chan message -> ProtocolState message -> IO ()
+runWS :: forall message. (Protocol message) => WSConfig -> Chan (Destination, message) -> ProtocolState message -> IO ()
 runWS cfg chan st = do
   var <- newMVar M.empty
   initProtocol (undefined :: message)
@@ -89,7 +92,7 @@ runServer host port ws = S.withSocketsDo $ do
 application :: forall message. Protocol message
              => MVar Clients
              -> ProtocolState message
-             -> Chan message
+             -> Chan (Destination,message)
              -> WS.Request
              -> WS.WebSockets WS.Hybi00 ()
 application var mchan _ rq = do
@@ -132,11 +135,10 @@ sendMessage sink msg =
   WS.sendSink sink $ WS.textData $ encodeMsg msg
 
 sendEvents var chan = do
-  msg <- readChan chan
-  putStrLn $ "Server message: " ++ show msg
-  clients <- readMVar var
-  forM_ (M.assocs clients) $ \(name, sink) -> do
-    putStrLn $ "Sending message to " ++ T.unpack name
+  (dst,msg) <- readChan chan
+  clients <- getClients dst var
+  forM_ clients $ \(name, sink) -> do
+    putStrLn $ "Sending message to " ++ T.unpack name ++ ": " ++ show msg
     if isQuit msg
       then do
            putStrLn "Quiting."
@@ -144,6 +146,14 @@ sendEvents var chan = do
       else do 
            sendMessage sink msg
            sendEvents var chan
+
+getClients dst var = do
+  list <- readMVar var
+  case dst of
+    Broadcast -> return $ M.assocs list
+    Username name -> case M.lookup name list of
+                       Just sink -> return [(name, sink)]
+                       Nothing -> return []
 
 parseStr :: (Monad m, FromJSON message) => String -> m message
 parseStr str = do

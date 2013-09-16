@@ -3,6 +3,7 @@ import Control.Monad
 import Control.Monad.State
 import Control.Exception
 import Data.Generics
+import Data.List
 import Text.Printf
 import Text.Parsec (runParser)
 import System.IO
@@ -83,18 +84,28 @@ runGame = do
        st <- get
        let ps = players st
            ns = [0 .. length ps - 1]
+       hs <- gets hands
+       i <- case findIndex C.null hs of
+              Nothing -> fail $ "Impossible: no empty hands on end of game"
+              Just i -> return i
+       winner <- getPlayer i
        forM_ (players st) $ \(Player player) -> do
-          onEndGame player
+          onEndGame player winner
        lift $ putStrLn "End of game. States:"
        lift $ print st
        forM_ ns $ \i -> do
          points <- getPoints i
          lift $ putStrLn $ printf "Player #%d points: %d" i points
 
-allOnMove actor@(Player player) move = do
+allBeforeMove actor@(Player player) move = do
   ps <- gets players
   forM_ ps $ \(Player p) -> do
-    onMove p actor move
+    beforeMove p actor move
+
+allAfterMove actor@(Player player) move = do
+  ps <- gets players
+  forM_ ps $ \(Player p) -> do
+    afterMove p actor move
     
 runPlayer i actor@(Player player) = go 3
   where
@@ -105,8 +116,9 @@ runPlayer i actor@(Player player) = go 3
               valid <- isMoveValid' actor move
               when (not valid) $
                   fail $ "Move is not valid."
-              allOnMove actor move
+              allBeforeMove actor move
               evalMove i move
+              allAfterMove actor move
       if ok
         then return ()
         else go (n-1)

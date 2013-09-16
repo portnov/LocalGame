@@ -8,6 +8,11 @@
         <script src="JSON-js/json2.js"></script>
        
         <style type="text/css">
+
+        body {
+          background: #0F4019;
+        }
+
         .drop,
         .drop2{
                 border:1px solid black;
@@ -20,12 +25,22 @@
           float: left;
           margin: 0.1em;
         }
+        .back {
+          float: right;
+          margin: 0.1em;
+        }
 
-        .meld, .hand, .trash {
+        .hand, .trash {
+        }
+
+        .meld {
+          min-width: 500px;
+          float: left;
         }
 
         .trash {
           text-align: right;
+          width: 90%;
         }
 
         .trash .card {
@@ -33,10 +48,8 @@
         }
 
         .container {
-          border: 1px black solid;
-          width: 90%;
           height: 150px;
-          background: #eee;
+          background: #578132;
           margin: 0.5em;
           padding: 0.5em;
         }
@@ -64,6 +77,17 @@
           overflow: auto;
         }
 
+        div#scores {
+          border: 1px gray solid;
+          background: gray;
+          width: 50%;
+          position: absolute;
+          left: 25%;
+          top: 25%;
+          margin: 0;
+          padding: 1em;
+        }
+
         </style>
 </head>
 <body>
@@ -77,11 +101,11 @@ $(document).ready(function(){
     window.socket = new WebSocket("ws://localhost:9160");
 
     window.socket.onopen = function(event) {
-      window.socket.send(JSON.stringify({event: "hello", name: "username"}));
+      window.socket.send(JSON.stringify({event: "hello", name: "W#0"}));
     };
 
     var log = function(text) {
-      $('#console').append("<p>" + text + "</p>");
+      $('#console').prepend("<p>" + text + "</p>");
     };
 
     var cardDraggable = {
@@ -98,6 +122,7 @@ $(document).ready(function(){
     var giveCard = function(card) {
       var elem = newCard(card);
       $('#hand').append(elem);
+      elem.effect("bounce");
     };
 
     var addToTrash = function(cardElem) {
@@ -105,20 +130,25 @@ $(document).ready(function(){
         var n = size+1;
         $('#trash').append(cardElem.attr("id", "trashcard"+n).data("n",n));
         $('#trash').data("size", n);
+        log("addToTrash: "+n+": "+cardElem.data("card"));
     };
 
     var onTrash = function(card) {
       var elem = newCard(card);
       addToTrash(elem);
+      /*elem.effect("bounce");*/
     };
 
     var onPickTrash = function(n) {
         var sz = $('#trash').data("size");
-        for (var i = sz-n+1; i <= sz; i++) {
-          var elem = $('#trash').find("#trashcard" + i);
+        for (var i = 0; i < n; i++) {
+          var elem = $('#trash').find("#trashcard" + (sz-i));
+          var card = elem.data("card");
+          log("Removing card "+card+" from trash");
           elem.remove();
         }
         $('#trash').data('size', sz-n);
+        log("Remove last "+n+" cards from trash. New trash size should be "+(sz-n));
     };
 
     var addMeld = function() {
@@ -168,6 +198,7 @@ $(document).ready(function(){
         addToTrash(newCard(card));
         $('#hand').find("[data-card='"+card+"']").remove();
       }
+      window.pickedCards = [];
     };
 
     var removeMeld = function(meldId) {
@@ -182,6 +213,12 @@ $(document).ready(function(){
       $('#hand').append(cardElem);
     };
 
+    var onChangeJoker = function(player, meldId, color, card) {
+      var joker = color == "red" ? "RJ" : "BJ" ;
+      removeMeldCard(meldId, joker);
+      $('#meld'+meldId).append(newCard(card));
+    };
+
     var undoAction = function(msg) {
       if (msg.type == 'trash') {
         undoTrash(msg.card);
@@ -191,6 +228,41 @@ $(document).ready(function(){
         removeMeld(msg.meld);
       } else if (msg.type == 'add') {
         removeMeldCard(msg.meld, msg.card);
+      }
+    };
+
+    var showScores = function(scores) {
+      var scoresDiv = $("<div id='scores'><h2>End of game. Scores:</h2></div>");
+      var len = scores.length;
+      for (var i = 0; i < len; i++) {
+        var score = scores[i];
+        scoresDiv.append($("<p>Player #"+i+" score: "+score+"</p>"));
+      }
+      $('body').append(scoresDiv);
+    };
+
+    var setState = function(st) {
+      $('#trash').data("size",0);
+      $('#trash').find('.card').remove();
+      for (var i = 0; i < st.trash.length; i++) {
+        addToTrash(newCard(st.trash[i]));
+      }
+      $('#trash').data("size", st.trash.length);
+      $('#melds').data("size",0);
+      $('#melds').find('.meld').remove();
+      for (var i = 0; i < st.melds.length; i++) {
+        var meld = addMeld();
+        for (var j = 0; j < st.melds[i].length; j++) {
+          var player = st.melds[i][j][0];
+          var card = st.melds[i][j][1];
+          log("Restoring meld #"+i+": "+player+": "+card);
+          meld.append(newCard(card).append("<div class='meld-owner'>"+player+"</div>"));
+        }
+      }
+      $('#melds').data("size", st.melds.length);
+      $('#hand').find('.card').remove();
+      for (var i = 0; i < st.hand.length; i++) {
+        $('#hand').append(newCard(st.hand[i]));
       }
     };
 
@@ -212,6 +284,8 @@ $(document).ready(function(){
           onMeld(msg.player, msg.meld, msg.card);
         } else if (msg.type == 'add') {
           onMeld(msg.player, msg.meld, msg.card);
+        } else if (msg.type == 'change') {
+          onChangeJoker(msg.player, msg.meld, msg.change, msg.card);
         }
       } else if (msg.event == 'lock') {
         doLock();
@@ -222,10 +296,11 @@ $(document).ready(function(){
       } else if (msg.event == 'error') {
         window.newMelds = [];
         $('#status').text(msg.message);
-        var sz = msg.actions.length;
-        for (var i = 0; i < sz; i ++) {
-          undoAction(msg.actions[i]);
-        }
+        setState(msg.state);
+      } else if (msg.event == "scores") {
+        showScores(msg.scores);
+      } else if (msg.event == "state") {
+        setState(msg.state);
       }
     };
 
@@ -348,7 +423,7 @@ $(document).ready(function(){
 
 <div class="container">
   <h2>AI hand</h2>
-  <img src="cards/back.png" class="card" />
+  <img src="cards/back.png" />
 </div>
 
 <p id='move1'>
@@ -356,7 +431,7 @@ $(document).ready(function(){
 
 <div class="trash drop container" data-size="0" id='trash'>
   <h2>Trash</h2>
-  <img src="cards/back.png" class="card" />
+  <img src="cards/back.png" class="back" />
 </div>
 
 <input type="button" id="addmeld" value="Add meld" disabled="disabled"/>

@@ -72,7 +72,7 @@ instance IsPlayer AI where
     let knownCards = M.fromList [(playerName p, []) | Player p <- ps, playerIdx p /= i]
     setPlayer i $ Player $ me {aiConfig = config, aiKnownCards = knownCards}
 
-  onEndGame me@(AI i _ config) = do
+  onEndGame me@(AI i _ config) _ = do
     currPoints <- getPoints i
     let avg = (fromIntegral currPoints + fromIntegral (Config.nGames config) * Config.avgPoints config) / fromIntegral (Config.nGames config + 1)
     let newConfig = config {
@@ -165,7 +165,7 @@ instance IsPlayer AI where
           then return ((move,p):acc)
           else iterGo ((move,p):acc) tc fn xs
                  
-  onMove me@(AI i _ _) player@(Player p) move = do
+  beforeMove me@(AI i _ _) player@(Player p) move = do
     if playerName p == playerName me
       then return ()
       else do

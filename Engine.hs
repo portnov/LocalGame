@@ -166,6 +166,14 @@ doTrash i card = do
          modify $ \st -> st {trash = card : trash st}
     else fail $ printf "Cannot trash %s: no such card in hand!" (show card)
 
+getJokerValue :: MeldId -> CardColor -> Game Card
+getJokerValue meldId color = do
+  meld <- getMeld meldId
+  case [card | (card, Just clr) <- zip (map snd $ meldCards' meld) (meldJokers meld), clr == color] of
+    [] -> fail $ printf "Unexpected: no %s joker in meld #%d" (show color) meldId
+    [c] -> return c
+    _ -> fail $ printf "Unexpected: more than one %s joker in meld #%d" (show color) meldId
+
 meldAllowedToAdd :: Meld -> [Card]
 meldAllowedToAdd (Street _ suit from to _ _) = down ++ up
   where
@@ -425,7 +433,7 @@ possibleMoves actor@(Player player) hand = do
 --                 lift $ putStrLn $ "Actions 2: " ++ show actions
                 let changeJoker = case change of
                                     Nothing -> Nothing
-                                    Just (color, meldId) -> Just (ChangeJoker color meldId)
+                                    Just (color, meldId) -> Just (ChangeJoker color meldId Nothing)
                 return [(changeJoker, pick, newMeld, add, trash) | (pick, newMeld, add, trash) <- actions]
 --   lift $ putStrLn $ "Actions 3: " ++ show actions
   forM actions $ \(changeJoker, pick, newMeld, add, trash) -> do

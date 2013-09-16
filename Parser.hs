@@ -71,7 +71,7 @@ pChangeJoker = do
   clr <- pColor
   spaces
   i <- number
-  return (ChangeJoker clr i)
+  return (ChangeJoker clr i Nothing)
 
 pColor :: Parser CardColor
 pColor = try (string "RJ" >> return Red) <|> (string "BJ" >> return Black)

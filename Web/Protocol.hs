@@ -11,6 +11,7 @@ import qualified Data.Text as T
 import Data.Text (Text)
 import qualified Data.HashMap.Strict as H
 import Data.Aeson hiding (Error)
+import Data.Aeson.Types (Parser)
 import Data.Generics
 import System.IO
 import Text.Printf
@@ -31,11 +32,29 @@ data Message =
   | Quit
   | Lock
   | Unlock
+  | Scores Text [Int]
   | GiveCard Card
   | MoveMsg Int Move
   | MoveAction Int MoveAction
-  | Error Text [MoveAction]
+  | Error Text (Maybe ClientState)
+  | SetState ClientState
   deriving (Eq, Show, Typeable)
+
+data ClientState = ClientState {
+    csTrash :: [Card],
+    csMelds :: [[(Text,Card)]],
+    csHand :: [Card] }
+  deriving (Eq, Show)
+
+instance ToJSON ClientState where
+  toJSON (ClientState {..}) = object ["trash" .= csTrash, "melds" .= csMelds, "hand" .= csHand]
+
+instance FromJSON ClientState where
+  parseJSON (Object o) =
+    ClientState
+      <$> o .: "trash"
+      <*> o .: "melds"
+      <*> o .: "hand"
 
 addPair k v (Object o) = Object $ H.insert k v o
 addPair _ _ _ = error "Unexpected: addPair on not-an-object"
@@ -49,10 +68,12 @@ instance ToJSON Message where
   toJSON Processing = object ["event" .= ("processing" :: Text)]
   toJSON Lock = object ["event" .= ("lock" :: Text)]
   toJSON Unlock = object ["event" .= ("unlock" :: Text)]
+  toJSON (Scores player scores) = object ["event" .= ("scores" :: Text), "scores" .= scores, "player" .= player]
   toJSON (GiveCard card) = object ["event" .= ("give" :: Text), "card" .= card]
   toJSON (MoveMsg i move) = addPair "event" "move" $ addPair "player" (toJSON i) $ toJSON move
   toJSON (MoveAction i a) = addPair "event" "action" $ addPair "player" (toJSON i) $ toJSON a
-  toJSON (Error err actions) = object ["event" .= ("error" :: Text), "message" .= err, "actions" .= actions]
+  toJSON (Error err st) = object ["event" .= ("error" :: Text), "message" .= err, "state" .= st]
+  toJSON (SetState st) = object ["event" .= ("state" :: Text), "state" .= st]
 
 instance ToJSON CardColor where
   toJSON Red = String "red"
@@ -70,7 +91,10 @@ instance ToJSON Card where
   toJSON (Card s v) = String $ T.pack $ show v ++ showSuit s
 
 instance ToJSON MoveAction where
-  toJSON (ChangeJoker color i) = object ["type" .= ("change" :: Text), "change" .= color, "meld" .= i]
+  toJSON (ChangeJoker color i x) = object $ ["type" .= ("change" :: Text), "change" .= color, "meld" .= i] ++
+                                            case x of
+                                              Nothing -> []
+                                              Just card -> ["card" .= card]
   toJSON (PickTrash n) = object ["type" .= ("pick" :: Text), "n" .= n]
   toJSON (NewMeld _) = error $ "MoveAction.Meld.toJSON is not implemented"
   toJSON (MeldCard i card) = object ["type" .= ("meld" :: Text), "card" .= card, "meld" .= i]
@@ -129,6 +153,9 @@ instance FromJSON Message where
       "quit" -> return Quit
       "lock" -> return Lock
       "unlock" -> return Unlock
+      "scores" -> Scores
+                    <$> o .: "player"
+                    <*> o .: "scores"
       "move" -> MoveMsg
                   <$> o .: "player"
                   <*> parseMove o
@@ -138,23 +165,32 @@ instance FromJSON Message where
       "give" -> parseGive o
       "error" -> Error
                    <$> o .: "message"
-                   <*> o .: "actions"
+                   <*> o .: "state"
+      "state" -> SetState <$> (ClientState
+                   <$> o .: "trash"
+                   <*> o .: "melds"
+                   <*> o .: "hand" )
   parseJSON x = fail $ "Invalid message object: " ++ show x
 
 instance FromJSON MoveAction where
   parseJSON (Object o) = parseAction o
   parseJSON x = fail $ "Invalid object for move action: " ++ show x
 
+parseChangeJoker :: Object -> Parser (Maybe (CardColor, MeldId, Maybe Card))
 parseChangeJoker o = do
    chgj <- o .:? "change"
    case chgj of
      Nothing -> return Nothing
      Just color -> do
                    i <- o .: "meld"
-                   return $ Just (color, i)
+                   x <- o .:? "card"
+                   return $ Just (color, i, x)
 
 parseMove o = do
   changeJoker <- parseChangeJoker o
+  let chg = case changeJoker of
+              Nothing -> Nothing
+              Just (clr,i,_) -> Just (clr, i)
   pick <- o .:? "pick"
   meldCards <- o .:? "melds" .!= []
   adds <- o .:? "add" .!= []
@@ -163,7 +199,7 @@ parseMove o = do
              case buildMeld undefined cards of
                Left err -> fail $ "Invalid meld: " ++ err
                Right meld -> return meld
-  return $ Move changeJoker pick melds adds trash
+  return $ Move chg pick melds adds trash
 
 instance FromJSON Card where
   parseJSON (String text) = do
@@ -182,7 +218,7 @@ parseAction o = do
                 x <- parseChangeJoker o
                 case x of
                   Nothing -> fail $ "No change joker info!"
-                  Just (color,i) -> return $ ChangeJoker color i
+                  Just (color,i,x) -> return $ ChangeJoker color i x
     "pick" -> PickTrash <$> (o .: "n")
     "meld" -> parseMeld o
     "add" -> AddToMeld

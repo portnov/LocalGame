@@ -19,19 +19,22 @@ import Text.Parsec (runParser)
 import Cards
 import Types
 import Engine
+import qualified CardSet as C
 import Parser (pCard)
 import Web.WebSockets
 import Web.Protocol
 
 data WebPlayer = WebPlayer {
        userNumber :: Int,
-       chanPush :: Chan Message,
+       chanPush :: Chan (Destination,Message),
        chanFromClient :: Chan Message,
        chanToClient :: Chan Message }
   deriving (Eq, Typeable)
 
 webPlayer :: Int -> Player
 webPlayer i = Player $ WebPlayer i undefined undefined undefined
+
+just me = Username (T.pack $ playerName me)
 
 instance Show WebPlayer where
   show (WebPlayer i _ _ _) = printf "W#%d" i
@@ -50,29 +53,26 @@ instance IsPlayer WebPlayer where
     return ()
 
   onInitialTrash me card = do
-    liftIO $ writeChan (chanPush me) $ MoveAction 0 $ Trash card
+    liftIO $ writeChan (chanPush me) (just me, MoveAction 0 $ Trash card)
 
   onGiveCard me card = do
-    liftIO $ writeChan (chanPush me) $ GiveCard card
+    liftIO $ writeChan (chanPush me) (just me, GiveCard card)
 
-  onMove me (Player player) move = do
+  onEndGame me (Player winner) = do
+    ps <- gets players
+    let ns = [0 .. length ps - 1]
+    scores <- forM ns $ getPoints
+    liftIO $ writeChan (chanPush me) (just me, Scores (T.pack $ playerName winner) scores)
+
+  afterMove me (Player player) move = do
     when (playerIdx me /= playerIdx player) $ do
-       liftIO $ writeChan (chanPush me) Lock
-       liftIO $ writeChan (chanPush me) $ MoveMsg (playerIdx player) move
-       whenJust (toPickTrash move) $ \n -> do
-          liftIO $ writeChan (chanPush me) $ onPickTrash (playerIdx player) n
-       nMelds <- gets (length . melds)
-       let meldIds = [nMelds..]
-       forM_ (zip meldIds $ toNewMelds move) $ \(meldId, meld) -> do
-          forM_ (map snd $ meldCards meld) $ \card -> do
-              liftIO $ writeChan (chanPush me) $ onNewMeld (playerIdx player) meldId card
-       forM_ (toAddToMelds move) $ \pair -> do
-           liftIO $ writeChan (chanPush me) $ onAddToMeld (playerIdx player) pair
-       liftIO $ writeChan (chanPush me) $ onTrash (playerIdx player) $ toTrash move
-           
+       let dst = just me
+       liftIO $ writeChan (chanPush me) (dst, Lock)
+       st <- getClientState (playerIdx me)
+       liftIO $ writeChan (chanPush me) (dst, SetState st)
 
   playerSelectMove me@(WebPlayer _ push fromClient toClient) = do
-    liftIO $ writeChan push Unlock
+    liftIO $ writeChan push (just me, Unlock)
     move <- readMove me fromClient toClient
     return move
 
@@ -83,6 +83,8 @@ onNewMeld i meldId card = MoveAction i $ MeldCard meldId card
 onAddToMeld i (card, meldId) = MoveAction i $ AddToMeld card meldId
 
 onTrash i card = MoveAction i $ Trash card
+
+onChangeJoker i color meldId card = MoveAction i $ ChangeJoker color meldId (Just card)
 
 waitStart fromClient toClient = do
   msg <- readChan fromClient
@@ -100,7 +102,8 @@ readMove me fromClient toClient = do
   actions <- liftIO $ readMoveActions [] fromClient toClient
   case buildMove (Player me) actions of
     Left err -> do
-      liftIO $ writeChan toClient $ Error (T.pack $ "Incomplete move: " ++ err) actions
+      st <- getClientState (playerIdx me)
+      liftIO $ writeChan toClient $ Error (T.pack $ "Incomplete move: " ++ err) (Just st)
       readMove me fromClient toClient
     Right move -> do
       r <- checkMoveM (Player me) move
@@ -109,9 +112,18 @@ readMove me fromClient toClient = do
                    liftIO $ writeChan toClient Lock
                    return move
         Just err -> do
-                    liftIO $ writeChan toClient $ Error (T.pack $ "Forbidden move: " ++ err) actions
+                    st <- getClientState (playerIdx me)
+                    liftIO $ writeChan toClient $ Error (T.pack $ "Forbidden move: " ++ err) (Just st)
                     readMove me fromClient toClient
 
+getClientState i = do
+    t <- gets (reverse . trash)
+    ms <- gets melds
+    hand <- getHand i
+    let ms' = map convert ms
+    return $ ClientState t ms' (C.toList hand)
+  where
+    convert meld = [(T.pack (playerName p), card) | (Player p, card) <- meldCards meld]
 
 readMoveActions acc fromClient toClient = do
   msg <- readChan fromClient
@@ -133,7 +145,7 @@ data ValidateState = NoAction Message | Action Int MoveAction | Finish
 validateMsg (Error err xs) = NoAction $ Error ("Client-generated error message: " `T.append` err) xs
 validateMsg (MoveAction i action) = Action i action
 validateMsg OK = Finish
-validateMsg msg = NoAction $ Error (T.pack $ "Message from client is not supported: " ++ show msg) []
+validateMsg msg = NoAction $ Error (T.pack $ "Message from client is not supported: " ++ show msg) Nothing
 
 
       

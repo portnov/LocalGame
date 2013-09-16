@@ -340,13 +340,16 @@ class Typeable p => IsPlayer p where
   onGiveCard :: p -> Card -> Game ()
   onGiveCard _ _ = return ()
 
-  onEndGame :: p -> Game ()
-  onEndGame _ = return ()
+  onEndGame :: p -> Player -> Game ()
+  onEndGame _ _ = return ()
 
   playerSelectMove :: p -> Game Move
 
-  onMove :: p -> Player -> Move -> Game ()
-  onMove _ _ _ = return ()
+  beforeMove :: p -> Player -> Move -> Game ()
+  beforeMove _ _ _ = return ()
+
+  afterMove :: p -> Player -> Move -> Game ()
+  afterMove _ _ _ = return ()
 
 data Dummy = Dummy Int
   deriving (Typeable)
@@ -365,7 +368,7 @@ instance Show Player where
   show (Player p) = playerName p
 
 data MoveAction =
-    ChangeJoker CardColor MeldId
+    ChangeJoker CardColor MeldId (Maybe Card)
   | PickTrash Int
   | NewMeld Meld
   | MeldCard Int Card
@@ -374,7 +377,7 @@ data MoveAction =
   deriving (Eq)
 
 instance Show MoveAction where
-  show (ChangeJoker clr i) = printf "Change %s Joker from meld #%d" (show clr) i
+  show (ChangeJoker clr i _) = printf "Change %s Joker from meld #%d" (show clr) i
   show (PickTrash n) = printf "Pick last %d cards from trash" n
   show (NewMeld meld) = "Create new meld: " ++ show meld
   show (MeldCard i card) = printf "Try to put %s to new meld #%d" (show card) i
@@ -414,7 +417,7 @@ buildMove player mas =
     _ -> failure $ "Only one card can be trashed"
   where
     add :: (M.Map Int [Card], Move) -> MoveAction -> m (M.Map Int [Card], Move)
-    add (m,move) (ChangeJoker clr i) = return $ (m, move {toChangeJoker = Just (clr, i)})
+    add (m,move) (ChangeJoker clr i _) = return $ (m, move {toChangeJoker = Just (clr, i)})
     add (m,move) (PickTrash n) = return $ (m, move {toPickTrash = Just n})
     add (m,move) (NewMeld meld) = return $ (m, move {toNewMelds = meld : toNewMelds move})
     add (m,move) (AddToMeld card i) = return $ (m, move {toAddToMelds = (card,i) : toAddToMelds move})
