@@ -67,6 +67,8 @@ instance IsPlayer WebPlayer where
   afterMove me (Player player) move = do
     when (playerIdx me /= playerIdx player) $ do
        let dst = just me
+       let msg = T.pack $ describeMove move
+       liftIO $ writeChan (chanPush me) (dst, MoveMsg (playerIdx player) msg)
        liftIO $ writeChan (chanPush me) (dst, Lock)
        st <- getClientState (playerIdx me)
        liftIO $ writeChan (chanPush me) (dst, SetState st)

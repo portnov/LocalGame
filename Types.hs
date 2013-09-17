@@ -404,6 +404,23 @@ instance Show Move where
       goMeld meld = "New meld:\n" ++ show meld
       goAdd (card,i) = printf "Add %s to meld #%d" (show card) i
 
+describeMove :: Move -> String
+describeMove move =
+              maybe "" showChangeJoker (toChangeJoker move) ++
+              maybe "" showPick (toPickTrash move) ++
+              unlines (map goMeld $ toNewMelds move) ++
+              unlines (map goAdd $ toAddToMelds move) ++
+              "Trash " ++ describeCard (toTrash move)
+    where
+      showChangeJoker (clr, i) = printf "Change %s Joker from meld #%d; " (show clr) i
+      showPick n = printf "Pick last %d cards from trash; " n
+      goMeld meld = "New meld: " ++ describeMeld meld ++ "; "
+      goAdd (card,i) = printf "Add %s to meld #%d; " (describeCard card) i
+      
+      describeMeld meld =
+        let cards = map snd $ meldCards meld
+        in  unwords $ map describeCard cards
+
 buildMove :: forall m. (Monad m, Failure String m) => Player -> [MoveAction] -> m Move
 buildMove player mas =
   case [c | Trash c <- mas] of

@@ -17,7 +17,6 @@
         .drop2{
                 border:1px solid black;
                 width:5em;
-                height:5em;
                 padding:0.5em;
         }
        
@@ -52,6 +51,7 @@
           background: #578132;
           margin: 0.5em;
           padding: 0.5em;
+          overflow: auto;
         }
 
         .container h2 {
@@ -172,6 +172,7 @@ $(document).ready(function(){
       }
       var cardElem = newCard(card);
       meld.append(cardElem.append("<div class='meld-owner'>Player #" + playerId + "</div>"));
+      meld.highlight();
     };
 
     var doLock = function() {
@@ -217,6 +218,7 @@ $(document).ready(function(){
       var joker = color == "red" ? "RJ" : "BJ" ;
       removeMeldCard(meldId, joker);
       $('#meld'+meldId).append(newCard(card));
+      $('hand').find("[data-card='"+card+"']").remove();
       $('#hand').append(newCard(joker));
     };
 
@@ -297,7 +299,7 @@ $(document).ready(function(){
       if (msg.event == 'give') {
         giveCard(msg.card);
       } else if (msg.event == 'move') {
-        $('#move' + msg.player).text(JSON.stringify(msg));
+        $('#move' + msg.player).text(msg.message);
       } else if (msg.event == 'action') {
         if (msg.type == 'trash') {
           onTrash(msg.card);

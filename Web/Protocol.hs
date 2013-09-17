@@ -35,7 +35,7 @@ data Message =
   | Unlock
   | Scores Text [Int]
   | GiveCard Card
-  | MoveMsg Int Move
+  | MoveMsg Int Text
   | MoveAction Int MoveAction
   | Error Text (Maybe ClientState)
   | SetState ClientState
@@ -72,7 +72,7 @@ instance ToJSON Message where
   toJSON Unlock = object ["event" .= ("unlock" :: Text)]
   toJSON (Scores player scores) = object ["event" .= ("scores" :: Text), "scores" .= scores, "player" .= player]
   toJSON (GiveCard card) = object ["event" .= ("give" :: Text), "card" .= card]
-  toJSON (MoveMsg i move) = addPair "event" "move" $ addPair "player" (toJSON i) $ toJSON move
+  toJSON (MoveMsg i msg) = object ["event" .= ("move" :: Text), "player" .= i, "message" .= msg]
   toJSON (MoveAction i a) = addPair "event" "action" $ addPair "player" (toJSON i) $ toJSON a
   toJSON (Error err st) = object ["event" .= ("error" :: Text), "message" .= err, "state" .= st]
   toJSON (SetState st) = object ["event" .= ("state" :: Text), "state" .= st]
@@ -161,7 +161,7 @@ instance FromJSON Message where
                     <*> o .: "scores"
       "move" -> MoveMsg
                   <$> o .: "player"
-                  <*> parseMove o
+                  <*> o .: "message"
       "action" -> MoveAction
                     <$> o .: "player"
                     <*> parseAction o

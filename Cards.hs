@@ -20,6 +20,12 @@ showSuit Diamonds = "D"
 showSuit Hearts = "H"
 showSuit Spades = "S"
 
+suitName :: Suit -> String
+suitName Clubs = "Clubs"
+suitName Diamonds = "Diamonds"
+suitName Hearts = "Hearts"
+suitName Spades = "Spades"
+
 data CardValue =
     N Int
   | Jack
@@ -34,6 +40,13 @@ instance Show CardValue where
   show Queen = "Q"
   show King  = "K"
   show Ace   = "A"
+
+describeValue :: CardValue -> String
+describeValue (N n) = show n
+describeValue Jack  = "Jack"
+describeValue Queen = "Queen"
+describeValue King  = "King"
+describeValue Ace   = "Ace"
 
 instance Enum CardValue where
   fromEnum (N n) = n
@@ -68,6 +81,11 @@ instance Show Card where
   show (Card s v) = show s ++ show v
   show (Joker Red)  = "RJ"
   show (Joker Black)  = "BJ"
+
+describeCard :: Card -> String
+describeCard (Joker Red) = "Red Joker"
+describeCard (Joker Black) = "Black Joker"
+describeCard (Card suit value) = describeValue value ++ " of " ++ suitName suit
 
 isJoker :: Card -> Bool
 isJoker (Joker _) = True
