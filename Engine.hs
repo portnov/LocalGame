@@ -166,12 +166,12 @@ doTrash i card = do
          modify $ \st -> st {trash = card : trash st}
     else fail $ printf "Cannot trash %s: no such card in hand!" (show card)
 
-getJokerValue :: MeldId -> CardColor -> Game Card
+getJokerValue :: MeldId -> CardColor -> Game (Maybe Card)
 getJokerValue meldId color = do
   meld <- getMeld meldId
   case [card | (card, Just clr) <- zip (map snd $ meldCards' meld) (meldJokers meld), clr == color] of
-    [] -> fail $ printf "Unexpected: no %s joker in meld #%d" (show color) meldId
-    [c] -> return c
+    [] -> return Nothing
+    [c] -> return $ Just c
     _ -> fail $ printf "Unexpected: more than one %s joker in meld #%d" (show color) meldId
 
 meldAllowedToAdd :: Meld -> [Card]

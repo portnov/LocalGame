@@ -217,6 +217,7 @@ $(document).ready(function(){
       var joker = color == "red" ? "RJ" : "BJ" ;
       removeMeldCard(meldId, joker);
       $('#meld'+meldId).append(newCard(card));
+      $('#hand').append(newCard(joker));
     };
 
     var undoAction = function(msg) {
@@ -241,6 +242,18 @@ $(document).ready(function(){
       $('body').append(scoresDiv);
     };
 
+    var jokerClick = function(meldId, color) {
+      return function() {
+        window.socket.send(JSON.stringify({
+              event: "action",
+              player: 0,
+              type: "change",
+              change: color,
+              meld: meldId
+            }));
+      };
+    };
+
     var setState = function(st) {
       $('#trash').data("size",0);
       $('#trash').find('.card').remove();
@@ -256,7 +269,17 @@ $(document).ready(function(){
           var player = st.melds[i][j][0];
           var card = st.melds[i][j][1];
           log("Restoring meld #"+i+": "+player+": "+card);
-          meld.append(newCard(card).append("<div class='meld-owner'>"+player+"</div>"));
+          var elem = newCard(card);
+          if (card == "RJ") {
+            elem.addClass("joker");
+            elem.data("joker", "red");
+            elem.click(jokerClick(i,"red"));
+          } else if (card == "BJ") {
+            elem.addClass("joker");
+            elem.data("joker", "black");
+            elem.click(jokerClick(i,"black"));
+          }
+          meld.append(elem.append("<div class='meld-owner'>"+player+"</div>"));
         }
       }
       $('#melds').data("size", st.melds.length);
@@ -350,12 +373,23 @@ $(document).ready(function(){
             accept : 'div.drag',
             drop : function(event, ui) {
               if (ui.draggable.parent().hasClass("hand")) {
-                $(this).append(ui.draggable.append("<div class='meld-owner'>Human</div>"));
                 var n = $(this).data("meld");
+                var elem = ui.draggable;
+                if (elem.data("card") == "RJ") {
+                  elem.addClass("joker");
+                  elem.data("joker", "red");
+                  elem.click(jokerClick(n,"red"));
+                } else if (elem.data("card") == "BJ") {
+                  elem.addClass("joker");
+                  elem.data("joker", "black");
+                  elem.click(jokerClick(n,"black"));
+                }
+
+                $(this).append(elem.append("<div class='meld-owner'>Human</div>"));
                 if (window.newMelds.indexOf(n) == -1) {
-                  sendAddToMeld(n, ui.draggable.data("card"));
+                  sendAddToMeld(n, elem.data("card"));
                 } else {
-                  sendMeldCard(n, ui.draggable.data("card"));
+                  sendMeldCard(n, elem.data("card"));
                 }
               }
             }
@@ -409,12 +443,20 @@ $(document).ready(function(){
         window.newMelds = [];
     });
 
+    $('#cancel').click(function() {
+        window.socket.send(JSON.stringify({
+              event: "cancel"
+            }));
+        window.newMelds = [];
+    });
+
     $('#start').click(function() {
         window.socket.send(JSON.stringify({
               event: "start"
             }));
         $(this).remove();
         $('#go').removeAttr("disabled");
+        $('#cancel').removeAttr("disabled");
         $('#addmeld').removeAttr("disabled");
     });
 });
@@ -454,6 +496,7 @@ $(document).ready(function(){
 
 <input type="button" id="start" value="Start!"/>
 <input type="button" id="go" value="Move!" disabled="disabled"/>
+<input type="button" id="cancel" value="Cancel" disabled="disabled"/>
 
 <div id="console">
 </div>

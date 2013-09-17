@@ -6,8 +6,8 @@ LocalGame: $(wildcard *.hs)
 	$(GHC) LocalGame.hs
 
 test: LocalGame Web/drag.html
-	./LocalGame web ai &
-	x-www-browser Web/drag.html
+	./LocalGame web ai +RTS -K300M &
+	x-www-browser Web/drag.html &
 
 clean:
 	rm -f LocalGame SimpleGame *.hi *.o

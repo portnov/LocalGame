@@ -73,7 +73,7 @@ instance IsPlayer WebPlayer where
 
   playerSelectMove me@(WebPlayer _ push fromClient toClient) = do
     liftIO $ writeChan push (just me, Unlock)
-    move <- readMove me fromClient toClient
+    move <- readMove me fromClient toClient push
     return move
 
 onPickTrash i n = MoveAction i $ PickTrash n
@@ -97,14 +97,15 @@ waitStart fromClient toClient = do
          putStrLn $ "Unexpected message from client before Hello: " ++ show msg
          waitStart fromClient toClient
 
-readMove me fromClient toClient = do
+readMove me fromClient toClient push = do
   liftIO $ putStrLn "Waiting move from web client..."
-  actions <- liftIO $ readMoveActions [] fromClient toClient
+  st <- getClientState (playerIdx me)
+  actions <- readMoveActions (just me) st [] fromClient toClient push
   case buildMove (Player me) actions of
     Left err -> do
       st <- getClientState (playerIdx me)
       liftIO $ writeChan toClient $ Error (T.pack $ "Incomplete move: " ++ err) (Just st)
-      readMove me fromClient toClient
+      readMove me fromClient toClient push
     Right move -> do
       r <- checkMoveM (Player me) move
       case r of
@@ -114,7 +115,7 @@ readMove me fromClient toClient = do
         Just err -> do
                     st <- getClientState (playerIdx me)
                     liftIO $ writeChan toClient $ Error (T.pack $ "Forbidden move: " ++ err) (Just st)
-                    readMove me fromClient toClient
+                    readMove me fromClient toClient push
 
 getClientState i = do
     t <- gets (reverse . trash)
@@ -125,27 +126,49 @@ getClientState i = do
   where
     convert meld = [(T.pack (playerName p), card) | (Player p, card) <- meldCards meld]
 
-readMoveActions acc fromClient toClient = do
-  msg <- readChan fromClient
-  putStrLn $ "readMoveActions: " ++ show msg
-  case validateMsg msg of
+readMoveActions dst st acc fromClient toClient push = do
+  msg <- liftIO $ readChan fromClient
+  liftIO $ putStrLn $ "readMoveActions: " ++ show msg
+  res <- validateMsg st msg
+  case res of
     NoAction msg -> do
-                    writeChan toClient msg
-                    readMoveActions acc fromClient toClient
-    Action _ action -> do
-      writeChan toClient Wait
-      readMoveActions (action:acc) fromClient toClient
+                    liftIO $ writeChan toClient msg
+                    readMoveActions dst st acc fromClient toClient push
+    Action _ action mmsg -> do
+      liftIO $ writeChan toClient Wait
+      whenJust mmsg $ \msg ->
+        liftIO $ writeChan push (dst,msg)
+      readMoveActions dst st (action:acc) fromClient toClient push
+    Clear st -> do
+      liftIO $ writeChan toClient $ SetState st
+      readMoveActions dst st [] fromClient toClient push
     Finish -> do
-      putStrLn $ "Finish. Actions: " ++ show acc
+      liftIO $ putStrLn $ "Finish. Actions: " ++ show acc
       return acc
 
-data ValidateState = NoAction Message | Action Int MoveAction | Finish
+data ValidateState = NoAction Message
+                   | Action Int MoveAction (Maybe Message)
+                   | Finish
+                   | Clear ClientState
   deriving (Eq, Show)
 
-validateMsg (Error err xs) = NoAction $ Error ("Client-generated error message: " `T.append` err) xs
-validateMsg (MoveAction i action) = Action i action
-validateMsg OK = Finish
-validateMsg msg = NoAction $ Error (T.pack $ "Message from client is not supported: " ++ show msg) Nothing
+validateMsg _ (Error err xs) = return $ NoAction $ Error ("Client-generated error message: " `T.append` err) xs
+validateMsg st (MoveAction i (ChangeJoker color meldId Nothing)) = do
+    res <- getJokerValue meldId color
+    case res of
+      Nothing -> return $ NoAction $ Error (T.pack $ printf "No %s joker in meld #%d" (show color) meldId) Nothing
+      Just card -> do
+                   hand <- getHand i
+                   if card `C.elem` hand
+                     then do
+                          let action = ChangeJoker color meldId (Just card)
+                              msg = MoveAction i action
+                          return $ Action i action (Just msg)
+                     else return $ NoAction $ Error (T.pack $ printf "No %s in your hand" (show card)) (Just st)
+validateMsg _ (MoveAction i action) = return $ Action i action Nothing
+validateMsg _ OK = return Finish
+validateMsg st Cancel = return $ Clear st
+validateMsg _ msg = return $ NoAction $ Error (T.pack $ "Message from client is not supported: " ++ show msg) Nothing
 
 
       

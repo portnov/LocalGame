@@ -27,6 +27,7 @@ data Message =
     Hello Text
   | Start
   | OK
+  | Cancel
   | Wait
   | Processing
   | Quit
@@ -63,6 +64,7 @@ instance ToJSON Message where
   toJSON (Hello name) = object ["event" .= ("hello" :: Text), "name" .= name]
   toJSON Quit = object ["event" .= ("quit" :: Text)]
   toJSON OK = object ["event" .= ("ok" :: Text)]
+  toJSON Cancel = object ["event" .= ("cancel" :: Text)]
   toJSON Start = object ["event" .= ("start" :: Text)]
   toJSON Wait = object ["event" .= ("wait" :: Text)]
   toJSON Processing = object ["event" .= ("processing" :: Text)]
@@ -147,6 +149,7 @@ instance FromJSON Message where
     case (action :: Text) of
       "hello" -> Hello <$> o .: "name"
       "ok" -> return OK
+      "cancel" -> return Cancel
       "start" -> return Start
       "wait" -> return Wait
       "processing" -> return Processing
