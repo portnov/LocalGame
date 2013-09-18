@@ -218,8 +218,7 @@ $(document).ready(function(){
       var joker = color == "red" ? "RJ" : "BJ" ;
       removeMeldCard(meldId, joker);
       $('#meld'+meldId).append(newCard(card));
-      $('hand').find("[data-card='"+card+"']").remove();
-      $('#hand').append(newCard(joker));
+      $('#hand').find("[data-card='"+card+"']").remove();
     };
 
     var undoAction = function(msg) {
