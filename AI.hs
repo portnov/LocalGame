@@ -222,7 +222,7 @@ movePoints i hand knownCards move (Just st) = do
           addPoints = sum $ map meldPoints ms
       in  if null list
             then addPoints
-            else maximum $ addPoints : map eval list
+            else sum $ addPoints : map eval list
 
     eval meld = sum $ map meldPoints $ map snd $ meldCards' meld
 
