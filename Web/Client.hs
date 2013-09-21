@@ -20,6 +20,8 @@ import System.FilePath.Glob
 import Text.Printf
 import Text.Parsec (runParser)
 import Data.Text.Format
+import qualified Network.WebSockets as WS
+import Data.IORef
 import qualified Data.Text.Format.Params as Params
 import Text.Localize hiding (__, lprintf)
 import qualified Text.Localize as Localize
@@ -40,10 +42,13 @@ lprintf = Localize.lprintf
 
 data WebPlayer = WebPlayer {
        userNumber :: Int,
-       chanPush :: Chan (Destination,Message),
+       chanPush :: Chan (Destination, Message),
        chanFromClient :: Chan Message,
        chanToClient :: Chan Message }
-  deriving (Eq, Typeable)
+  deriving (Typeable)
+
+instance Eq WebPlayer where
+  w1 == w2 = userNumber w1 == userNumber w2
 
 webPlayer :: Int -> Player
 webPlayer i = Player $ WebPlayer i undefined undefined undefined
@@ -70,7 +75,8 @@ instance IsPlayer WebPlayer where
     setPlayer (playerIdx me) $ Player $ me {chanPush = push, chanFromClient = from, chanToClient = to}
     pairs <- liftIO $ enumLanguages
     trans <- liftIO $ loadTranslations pairs
-    liftIO $ forkIO $ runWS defaultWSConfig push (trans, to,from)
+    langVar <- liftIO $ newIORef "C"
+    liftIO $ forkIO $ runWS defaultWSConfig push (trans, langVar, to,from)
     liftIO $ waitStart from to
     return ()
 
@@ -95,7 +101,7 @@ instance IsPlayer WebPlayer where
        st <- getClientState (playerIdx me)
        liftIO $ writeChan (chanPush me) (dst, SetState st)
 
-  playerSelectMove me@(WebPlayer _ push fromClient toClient) = do
+  playerSelectMove me@(WebPlayer _ push fromClient toClient ) = do
     liftIO $ writeChan push (just me, Unlock)
     move <- readMove me fromClient toClient push
     return move

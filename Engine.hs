@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, MultiParamTypeClasses #-}
 module Engine where
 
 import Control.Failure
@@ -323,7 +323,7 @@ isMoveValid' player move = do
 atomicallyTry :: Bool -> Game () -> Game Bool
 atomicallyTry toPrintExc action = do
   st <- get
-  r <- liftIO $ runStateT (runErrorT action) st
+  r <- liftIO $ runStateT (runErrorT $ unGame action) st
   case r of
     (Right _, st') -> do
                  put st'
@@ -337,7 +337,7 @@ atomicallyTry toPrintExc action = do
 atomicallyTryM :: Game () -> Game (Maybe LocalizedString)
 atomicallyTryM action = do
   st <- get
-  r <- liftIO $ runStateT (runErrorT action) st
+  r <- liftIO $ runStateT (runErrorT $ unGame action) st
   case r of
     (Right _, st') -> do
                  put st'
@@ -349,7 +349,7 @@ atomicallyTryM action = do
 evalGame :: Game () -> Game (Maybe GameState)
 evalGame action = do
   st <- get
-  r <- liftIO $ runStateT (runErrorT action) st
+  r <- liftIO $ runStateT (runErrorT $ unGame action) st
   put st
   case r of
     (Right _, st') -> return (Just st')

@@ -23,6 +23,7 @@ import Text.Printf
 import Text.Parsec (runParser)
 import Text.Localize
 import qualified Network.WebSockets as WS
+import Data.IORef
 
 import Cards
 import Types
@@ -264,18 +265,23 @@ getRequestLanguage rq =
     ok x = chr (fromIntegral x) `notElem` ",-;"
 
 instance Protocol Message where
-  type ProtocolState Message = (Translations, Chan Message, Chan Message)
+  type ProtocolState Message = (Translations, IORef LanguageId, Chan Message, Chan Message)
 
   initProtocol _ = return ()
 
-  onClientMessage rq sink msg (trans, fromPlayer, toPlayer) = do
+  onClientMessage rq sink msg (trans, langVar, fromPlayer, toPlayer) = do
+    let lang = getRequestLanguage rq
+    writeIORef langVar lang
     putStrLn $ "onClientMessage: " ++ show msg
     writeChan toPlayer msg
     res <- readChan fromPlayer
     putStrLn $ "Server answer: " ++ show res
-    let lang = getRequestLanguage rq
     let res' = translateMessage trans lang res
     sendMessage sink res'
+
+  preparePushMessage (trans,langVar,_,_) msg = do
+    lang <- readIORef langVar
+    return $ translateMessage trans lang msg
 
   getHelloUsername (Hello name) = Just name
   getHelloUsername _ = Nothing

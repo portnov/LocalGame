@@ -10,6 +10,8 @@ import Control.Concurrent
 import qualified Network.Socket as S
 import qualified Network.WebSockets as WS
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as TLE
 import Data.Text (Text)
 import qualified Data.ByteString.Lazy as L
 import qualified Data.Map as M
@@ -48,6 +50,9 @@ class (FromJSON message, ToJSON message, Show message) => Protocol message where
 
   onClientMessage :: WS.Request -> Sink -> message -> ProtocolState message -> IO ()
 
+  preparePushMessage :: ProtocolState message -> message -> IO message
+  preparePushMessage _ m = return m
+
   onInvalidMessage :: String -> String -> IO message
   onInvalidMessage string err =
     fail $ "Failed parsing `" ++ string ++ "': " ++ err
@@ -59,7 +64,7 @@ runWS :: forall message. (Protocol message) => WSConfig -> Chan (Destination, me
 runWS cfg chan st = do
   var <- newMVar M.empty
   initProtocol (undefined :: message)
-  forkIO $ sendEvents var chan
+  forkIO $ sendEvents st var chan
   runServer (wscHost cfg) (wscPort cfg) $ application var st chan 
 
 -- | Provides a simple server.
@@ -92,7 +97,7 @@ runServer host port ws = S.withSocketsDo $ do
 application :: forall message. Protocol message
              => MVar Clients
              -> ProtocolState message
-             -> Chan (Destination,message)
+             -> Chan (Destination, message)
              -> WS.Request
              -> WS.WebSockets WS.Hybi00 ()
 application var mchan _ rq = do
@@ -134,7 +139,7 @@ removeClient var name = do
 sendMessage sink msg =
   WS.sendSink sink $ WS.textData $ encodeMsg msg
 
-sendEvents var chan = do
+sendEvents st var chan = do
   (dst,msg) <- readChan chan
   clients <- getClients dst var
   forM_ clients $ \(name, sink) -> do
@@ -144,8 +149,9 @@ sendEvents var chan = do
            putStrLn "Quiting."
            return ()
       else do 
-           sendMessage sink msg
-           sendEvents var chan
+           msg' <- preparePushMessage st msg
+           sendMessage sink msg'
+           sendEvents st var chan
 
 getClients dst var = do
   list <- readMVar var
@@ -166,7 +172,7 @@ parseText :: forall message m. (MonadIO m, Protocol message) => Text -> m messag
 parseText text = do
   let str = T.unpack text
   liftIO $ putStrLn $ "Client msg: " ++ str
-  let bstr = L.pack $ map (fromIntegral . ord) str
+  let bstr = TLE.encodeUtf8 $ TL.fromStrict text
   case eitherDecode bstr of
     Left err -> liftIO $ onInvalidMessage str err
     Right res -> return res
@@ -174,5 +180,5 @@ parseText text = do
 encodeMsg :: ToJSON message => message -> Text
 encodeMsg msg =
   let bstr = encode msg
-  in  T.pack $ map (chr . fromIntegral) $ L.unpack bstr
+  in  TL.toStrict $ TLE.decodeUtf8 bstr
 

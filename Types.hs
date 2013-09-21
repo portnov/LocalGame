@@ -1,4 +1,4 @@
-{-# LANGUAGE ExistentialQuantification, TypeFamilies, GADTs, TypeOperators, FlexibleContexts, DeriveDataTypeable, ScopedTypeVariables #-}
+{-# LANGUAGE ExistentialQuantification, TypeFamilies, GADTs, TypeOperators, FlexibleContexts, DeriveDataTypeable, ScopedTypeVariables, GeneralizedNewtypeDeriving, MultiParamTypeClasses #-}
 
 module Types where
 
@@ -310,7 +310,11 @@ instance Error LocalizedString where
   noMsg = mempty
   strMsg msg = Untranslated $ T.pack msg
 
-type Game a = ErrorT LocalizedString (StateT GameState IO) a
+newtype Game a = Game {unGame :: ErrorT LocalizedString (StateT GameState IO) a}
+  deriving (Monad,MonadError LocalizedString,MonadState GameState,MonadIO)
+
+instance Failure LocalizedString Game where
+  failure e = Game $ ErrorT $ return $ Left e
 
 getHand :: Int -> Game Hand
 getHand i = do
@@ -415,12 +419,13 @@ instance Show Move where
 
 describeMove :: Move -> LocalizedString
 describeMove move =
-              maybe mempty showChangeJoker (toChangeJoker move) <>
-              maybe mempty showPick (toPickTrash move) <>
+              maybe no showChangeJoker (toChangeJoker move) <>
+              maybe no showPick (toPickTrash move) <>
               unlinesL (map goMeld $ toNewMelds move) <>
               unlinesL (map goAdd $ toAddToMelds move) <>
               __ "Trash " <> describeCard (toTrash move)
     where
+      no = Untranslated (T.pack "")
       showChangeJoker (clr, i) = lprintf "Change {} Joker from meld #{}; " (show clr, i)
       showPick n = lprintf "Pick last {} cards from trash; " (Only n)
       goMeld meld = __ "New meld: " <> describeMeld meld <> (Untranslated $ T.pack "; ")

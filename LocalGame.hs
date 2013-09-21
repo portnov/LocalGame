@@ -137,5 +137,5 @@ main = do
                       then ["ai", "ai"]
                       else argv
   let players = zipWith makePlayer playerTypes [0..]
-  runStateT (runErrorT $ testGame $ length players) (emptyState players)
+  runStateT (runErrorT $ unGame $ testGame $ length players) (emptyState players)
 
