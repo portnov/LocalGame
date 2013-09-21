@@ -1,5 +1,8 @@
 module Cards where
 
+import Data.Monoid
+import Text.Localize
+import qualified Data.Text.Lazy as T
 import System.Random
 
 data Suit = Clubs | Diamonds | Hearts | Spades
@@ -20,11 +23,11 @@ showSuit Diamonds = "D"
 showSuit Hearts = "H"
 showSuit Spades = "S"
 
-suitName :: Suit -> String
-suitName Clubs = "Clubs"
-suitName Diamonds = "Diamonds"
-suitName Hearts = "Hearts"
-suitName Spades = "Spades"
+suitName :: Suit -> LocalizedString
+suitName Clubs = __ "Clubs"
+suitName Diamonds = __ "Diamonds"
+suitName Hearts = __ "Hearts"
+suitName Spades = __ "Spades"
 
 data CardValue =
     N Int
@@ -41,12 +44,12 @@ instance Show CardValue where
   show King  = "K"
   show Ace   = "A"
 
-describeValue :: CardValue -> String
-describeValue (N n) = show n
-describeValue Jack  = "Jack"
-describeValue Queen = "Queen"
-describeValue King  = "King"
-describeValue Ace   = "Ace"
+describeValue :: CardValue -> LocalizedString
+describeValue (N n) = Untranslated $ T.pack $ show n
+describeValue Jack  = __ "Jack"
+describeValue Queen = __ "Queen"
+describeValue King  = __ "King"
+describeValue Ace   = __ "Ace"
 
 instance Enum CardValue where
   fromEnum (N n) = n
@@ -82,10 +85,10 @@ instance Show Card where
   show (Joker Red)  = "RJ"
   show (Joker Black)  = "BJ"
 
-describeCard :: Card -> String
-describeCard (Joker Red) = "Red Joker"
-describeCard (Joker Black) = "Black Joker"
-describeCard (Card suit value) = describeValue value ++ " of " ++ suitName suit
+describeCard :: Card -> LocalizedString
+describeCard (Joker Red) = __ "Red Joker"
+describeCard (Joker Black) = __ "Black Joker"
+describeCard (Card suit value) = describeValue value <> __ " of " <> suitName suit
 
 isJoker :: Card -> Bool
 isJoker (Joker _) = True

@@ -9,12 +9,16 @@ import Text.Parsec.String
 import Control.Failure
 import Data.Functor.Identity
 import Data.Char
+import Text.Localize
 
 import Cards
 import Types
 
 instance Failure String Identity where
   failure s = fail s
+
+instance Failure LocalizedString Identity where
+  failure s = fail $ show s
 
 pSuit :: Parser Suit
 pSuit = do

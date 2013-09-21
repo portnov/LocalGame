@@ -9,12 +9,20 @@ import Control.Exception
 import Control.Monad.IO.Class 
 import Control.Concurrent
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import Data.Text (Text)
 import Data.Aeson hiding (Error)
 import Data.Generics
+import Data.Monoid
 import System.IO
+import System.FilePath
+import System.FilePath.Glob
 import Text.Printf
 import Text.Parsec (runParser)
+import Data.Text.Format
+import qualified Data.Text.Format.Params as Params
+import Text.Localize hiding (__, lprintf)
+import qualified Text.Localize as Localize
 
 import Cards
 import Types
@@ -23,6 +31,12 @@ import qualified CardSet as C
 import Parser (pCard)
 import Web.WebSockets
 import Web.Protocol
+
+__ :: TL.Text -> LocalizedString
+__ text = Localize.__ text
+
+lprintf :: Params.Params ps => TL.Text -> ps -> LocalizedString
+lprintf = Localize.lprintf
 
 data WebPlayer = WebPlayer {
        userNumber :: Int,
@@ -39,6 +53,12 @@ just me = Username (T.pack $ playerName me)
 instance Show WebPlayer where
   show (WebPlayer i _ _ _) = printf "W#%d" i
 
+enumLanguages :: IO [(LanguageId, FilePath)]
+enumLanguages = do
+  files <- glob "mo/*.mo"
+  let langs = map (\f -> take (length f - 3) f) $ map takeFileName files
+  return $ zip langs files
+
 instance IsPlayer WebPlayer where
   playerName u = show u
   playerIdx (WebPlayer i _ _ _) = i
@@ -48,7 +68,9 @@ instance IsPlayer WebPlayer where
     from <- liftIO $ newChan
     to <- liftIO $ newChan
     setPlayer (playerIdx me) $ Player $ me {chanPush = push, chanFromClient = from, chanToClient = to}
-    liftIO $ forkIO $ runWS defaultWSConfig push (to,from)
+    pairs <- liftIO $ enumLanguages
+    trans <- liftIO $ loadTranslations pairs
+    liftIO $ forkIO $ runWS defaultWSConfig push (trans, to,from)
     liftIO $ waitStart from to
     return ()
 
@@ -67,7 +89,7 @@ instance IsPlayer WebPlayer where
   afterMove me (Player player) move = do
     when (playerIdx me /= playerIdx player) $ do
        let dst = just me
-       let msg = T.pack $ describeMove move
+       let msg = describeMove move
        liftIO $ writeChan (chanPush me) (dst, MoveMsg (playerIdx player) msg)
        liftIO $ writeChan (chanPush me) (dst, Lock)
        st <- getClientState (playerIdx me)
@@ -106,7 +128,7 @@ readMove me fromClient toClient push = do
   case buildMove (Player me) actions of
     Left err -> do
       st <- getClientState (playerIdx me)
-      liftIO $ writeChan toClient $ Error (T.pack $ "Incomplete move: " ++ err) (Just st)
+      liftIO $ writeChan toClient $ Error (__ "Incomplete move: " <> err) (Just st)
       readMove me fromClient toClient push
     Right move -> do
       r <- checkMoveM (Player me) move
@@ -116,7 +138,7 @@ readMove me fromClient toClient push = do
                    return move
         Just err -> do
                     st <- getClientState (playerIdx me)
-                    liftIO $ writeChan toClient $ Error (T.pack $ "Forbidden move: " ++ err) (Just st)
+                    liftIO $ writeChan toClient $ Error (__ "Forbidden move: " <> err) (Just st)
                     readMove me fromClient toClient push
 
 getClientState i = do
@@ -154,11 +176,11 @@ data ValidateState = NoAction Message
                    | Clear ClientState
   deriving (Eq, Show)
 
-validateMsg _ (Error err xs) = return $ NoAction $ Error ("Client-generated error message: " `T.append` err) xs
+validateMsg _ (Error err xs) = return $ NoAction $ Error (__ "Client-generated error message: " <> err) xs
 validateMsg st (MoveAction i (ChangeJoker color meldId Nothing)) = do
     res <- getJokerValue meldId color
     case res of
-      Nothing -> return $ NoAction $ Error (T.pack $ printf "No %s joker in meld #%d" (show color) meldId) Nothing
+      Nothing -> return $ NoAction $ Error (lprintf "No {} joker in meld #{}" (show color, meldId)) Nothing
       Just card -> do
                    hand <- getHand i
                    if card `C.elem` hand
@@ -166,11 +188,11 @@ validateMsg st (MoveAction i (ChangeJoker color meldId Nothing)) = do
                           let action = ChangeJoker color meldId (Just card)
                               msg = MoveAction i action
                           return $ Action i action (Just msg)
-                     else return $ NoAction $ Error (T.pack $ printf "No %s in your hand" (show card)) (Just st)
+                     else return $ NoAction $ Error (lprintf "No {} in your hand" (Only $ show card)) (Just st)
 validateMsg _ (MoveAction i action) = return $ Action i action Nothing
 validateMsg _ OK = return Finish
 validateMsg st Cancel = return $ Clear st
-validateMsg _ msg = return $ NoAction $ Error (T.pack $ "Message from client is not supported: " ++ show msg) Nothing
+validateMsg _ msg = return $ NoAction $ Error (lprintf "Message from client is not supported: {}" (Only $ show msg)) Nothing
 
 
       

@@ -2,6 +2,7 @@
 
 module AI where
 
+import Control.Monad.IO.Class
 import Control.Monad.State
 import Data.List
 import qualified Data.Map as M
@@ -67,7 +68,7 @@ instance IsPlayer AI where
   playerIdx (AI i _ _) = i
 
   initPlayer me@(AI i _ _) = do
-    config <- lift $ Config.load i
+    config <- liftIO $ Config.load i
     ps <- gets players
     let knownCards = M.fromList [(playerName p, []) | Player p <- ps, playerIdx p /= i]
     setPlayer i $ Player $ me {aiConfig = config, aiKnownCards = knownCards}
@@ -78,21 +79,21 @@ instance IsPlayer AI where
     let newConfig = config {
                      Config.avgPoints = avg,
                      Config.nGames = Config.nGames config + 1 }
-    lift $ Config.save i newConfig
-    lift $ putStrLn $ printf "AI#%d avg points: %0.2f" i avg
+    liftIO $ Config.save i newConfig
+    liftIO $ putStrLn $ printf "AI#%d avg points: %0.2f" i avg
 
   playerSelectMove me@(AI i knownCards config) = do
       hand <- getHand i
       let totalKnownCards = sum $ map length $ M.elems knownCards
-      lift $ putStrLn $ printf "AI#%d has %d cards in its hand. It knows %d cards of other players." i (C.size hand) totalKnownCards 
-      lift $ putStr $ "Generating list of possible moves: "
-      lift $ hFlush stdout
+      liftIO $ putStrLn $ printf "AI#%d has %d cards in its hand. It knows %d cards of other players." i (C.size hand) totalKnownCards 
+      liftIO $ putStr $ "Generating list of possible moves: "
+      liftIO $ hFlush stdout
       moves <- validMoves (Player me) hand
       let nMoves = length moves
       if null moves
         then if C.size hand == 1
                then do
-                    lift $ putStrLn $ " single card, put it to trash and exit."
+                    liftIO $ putStrLn $ " single card, put it to trash and exit."
                     return $ Move {
                               toChangeJoker = Nothing,
                               toPickTrash = Nothing,
@@ -102,8 +103,8 @@ instance IsPlayer AI where
                else fail "Unexpected: no moves."
         else do
               rs <- mapM go moves
-              lift $ putStr $ printf " done.\nSelecting best of %d moves: " nMoves
-              lift $ hFlush stdout
+              liftIO $ putStr $ printf " done.\nSelecting best of %d moves: " nMoves
+              liftIO $ hFlush stdout
               currentSt <- get
               let currentPoints = myPoints 1 i currentSt
                   tc = if currentPoints >= 0
@@ -116,15 +117,15 @@ instance IsPlayer AI where
                               else if deckLeft <= (54 - 7 * nPlayers)
                                      then Config.onMittelspiel config
                                      else Config.onDebut config
-              lift $ putStr $ "using config section: " ++ show section
-              lift $ hFlush stdout
+              liftIO $ putStr $ "using config section: " ++ show section
+              liftIO $ hFlush stdout
               resultMs <- iter tc (points section hand) $ zip3 [0..] moves rs
               let results = map snd resultMs
                   maxPoints = maximum results
                   Just moveIdx = findIndex (== maxPoints) results
                   move = fst $ resultMs !! moveIdx
                   seenMoves = length resultMs
-              lift $ putStrLn $ printf "\nAI#%d selected move #%d (points %0.1f): %s" i (seenMoves - moveIdx - 1) maxPoints (show move)
+              liftIO $ putStrLn $ printf "\nAI#%d selected move #%d (points %0.1f): %s" i (seenMoves - moveIdx - 1) maxPoints (show move)
               return move
     where
       go move = do
@@ -133,11 +134,11 @@ instance IsPlayer AI where
 
       points section hand j move r = do
         r <- movePoints i hand knownCards move r
-        lift $ putStr $ show r
-        lift $ hFlush stdout
+        liftIO $ putStr $ show r
+        liftIO $ hFlush stdout
         let p = evalMovePoints section r
-        lift $ putStr $ printf "[%d:%0.1f]" (j :: Int) p
-        lift $ hFlush stdout
+        liftIO $ putStr $ printf "[%d:%0.1f]" (j :: Int) p
+        liftIO $ hFlush stdout
         return p
 
       iter :: TerminatingCondition
@@ -185,7 +186,7 @@ movePoints i hand knownCards move (Just st) = do
         newMeldPoints = myMelds i st
         newHandPoints = myHandPoints i st
     let currentPoints = myPoints 1 i currentSt
-    lift $ hFlush stdout
+    liftIO $ hFlush stdout
     t <- gets trash
     let newTrash = toTrash move : t
     let otherCards = M.elems knownCards
@@ -197,7 +198,7 @@ movePoints i hand knownCards move (Just st) = do
     ps <- gets players
     let otherPlayers = [actor | actor@(Player p) <- ps, playerIdx p /= i]
     let otherPoints = [go player (addJoker $ C.fromList $ newTrash ++ hisHand) | (player, hisHand) <- zip ps otherCards]
-    lift $ putStr $ show otherPoints
+    liftIO $ putStr $ show otherPoints
     let maxOtherPoints = if newSz == 0
                            then 0
                            else if null otherPoints

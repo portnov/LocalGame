@@ -1,0 +1,153 @@
+# Translation file
+
+msgid ""
+msgstr ""
+"Project-Id-Version: 0.1.0.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2013-09-21 21:16+0600\n"
+"PO-Revision-Date: 2013-09-21 21:20+0600\n"
+"Last-Translator: Ilya Portnov <portnov84@rambler.ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: Cards.hs:27:21
+msgid "Clubs"
+msgstr "Крестей"
+
+#: Cards.hs:28:24
+msgid "Diamonds"
+msgstr "Бубен"
+
+#: Cards.hs:29:22
+msgid "Hearts"
+msgstr "Червей"
+
+#: Cards.hs:30:22
+msgid "Spades"
+msgstr "Пик"
+
+#: Cards.hs:49:26
+msgid "Jack"
+msgstr "Валет"
+
+#: Cards.hs:50:26
+msgid "Queen"
+msgstr "Дама"
+
+#: Cards.hs:51:26
+msgid "King"
+msgstr "Король"
+
+#: Cards.hs:52:26
+msgid "Ace"
+msgstr "Туз"
+
+#: Cards.hs:89:31
+msgid "Red Joker"
+msgstr "Красный джокер"
+
+#: Cards.hs:90:33
+msgid "Black Joker"
+msgstr "Чёрный джокер"
+
+#: Cards.hs:91:60
+msgid " of "
+msgstr " "
+
+#: Engine.hs:145:28
+msgid "No such player: {}"
+msgstr "Нет такого игрока: {}"
+
+#: Engine.hs:159:28
+msgid "No such meld: #{}"
+msgstr "Нет такой выкладки: #{}"
+
+#: Engine.hs:174:28
+msgid "Cannot trash {}: no such card in hand!"
+msgstr "Нельзя положить {} в сброс: нет такой карты в руке!"
+
+#: Engine.hs:182:28
+msgid "Unexpected: more than one {} joker in meld #{}"
+msgstr "Неожиданно: больше одного джокера {} в выкладке #{}"
+
+#: Engine.hs:200:34
+msgid "No {} joker in meld"
+msgstr "Нет джокера {} в выкладке"
+
+#: Engine.hs:228:28
+msgid "No cards in hand: {}"
+msgstr "Нет карт в руке: {}"
+
+#: Engine.hs:241:32
+msgid "Not allowed to add {} to meld #{}; only allowed are {}"
+msgstr "Не разрешено добавлять {} в выкладку #{}; разрешены только {}"
+
+#: Engine.hs:243:28
+msgid "No {} in hand"
+msgstr "Нет {} в руке"
+
+#: Engine.hs:248:28
+msgid "Cannot add {} to street #{}: invalid card suit"
+msgstr "Нельзя добавить {} в стрит #{}: не подходящая масть карты"
+
+#: Engine.hs:259:42
+msgid "Cannot add {} to street {}: invalid card value"
+msgstr "Нельзя добавить {} в стрит {}: не подходящее значение карты"
+
+#: Engine.hs:262:28
+msgid "Cannot add {} to avenue #{}"
+msgstr "Нельзя добавить {} в авеню #{}"
+
+#: Engine.hs:264:35
+msgid "Cannot add {} to avenue #{}: this suit is already in meld"
+msgstr "Нельзя добавить {} в авеню #{}: эта масть уже есть в выкладке"
+
+#: Engine.hs:289:20
+msgid "You can change joker only to use it in one of new melds."
+msgstr "Вы можете заменить джокера только чтобы использовать его в одной из новых выкладок"
+
+#: Engine.hs:294:20
+msgid "You can pick trash only to use it in new or existing melds."
+msgstr "Вы можете брать сброс только чтобы использовать его в новых или существующих выкладках"
+
+#: Engine.hs:296:29
+msgid "You can not trash joker."
+msgstr "Нельзя класть джокера в сброс"
+
+#: Engine.hs:302:23
+msgid "Too many cards spended"
+msgstr "Потрачено слишком много карт"
+
+#: Engine.hs:304:30
+msgid "You can not exit yet."
+msgstr "Вы ещё не можете выйти."
+
+#: Engine.hs:402:55
+msgid "Unexpected: cannot change joker in meld"
+msgstr "Неожиданно: не могу заменить джокера в выкладке"
+
+#: Web/Client.hs:131:47
+msgid "Incomplete move: "
+msgstr "Неполный ход: "
+
+#: Web/Client.hs:141:61
+msgid "Forbidden move: "
+msgstr "Запрещённый ход: "
+
+#: Web/Client.hs:179:62
+msgid "Client-generated error message: "
+msgstr "Клиент прислал сообщение об ошибке: "
+
+#: Web/Client.hs:183:53
+msgid "No {} joker in meld #{}"
+msgstr "Нет джокера {} в выкладке #{}"
+
+#: Web/Client.hs:191:62
+msgid "No {} in your hand"
+msgstr "В вашей руке нет {}"
+
+#: Web/Client.hs:195:56
+msgid "Message from client is not supported: {}"
+msgstr "Сообщение от клиента не поддерживается: {}"
+

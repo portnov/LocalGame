@@ -1,15 +1,20 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 module Engine where
 
+import Control.Failure
 import qualified Control.Exception as E
 import Control.Monad
+import Control.Monad.IO.Class
 import Control.Monad.State
+import Control.Monad.Error
 import Math.Combinat.Sets
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.List
 import Data.Maybe
 import Text.Printf
+import Data.Text.Format
+import Text.Localize
 import System.IO
 import System.Random
 
@@ -18,6 +23,8 @@ import qualified CardSet as C
 import Types
 
 instance E.Exception String
+
+instance E.Exception LocalizedString
 
 exitBonus :: Int
 exitBonus = 50
@@ -73,19 +80,19 @@ giveCard i = do
   cards <- gets deck
   case cards of
     [] -> do
-          lift $ putStrLn "No more cards in deck."
+          liftIO $ putStrLn "No more cards in deck."
           return ()
     (card:newDeck) -> do
       hand <- getHand i
       setHand i $ C.insert card hand
-      lift $ putStrLn $ "Giving card to player #" ++ show i
+      liftIO $ putStrLn $ "Giving card to player #" ++ show i
       Player player <- getPlayer i
       modify $ \st -> st {deck = newDeck}
       onGiveCard player card
 
 initGame :: Int -> Int -> Game ()
 initGame nPlayers handSize = do
-    pack <- lift $ shuffle fullPack
+    pack <- liftIO $ shuffle fullPack
     modify $ \st -> st {deck = pack}
     ps <- gets players
     forM_ ps $ \(Player player) ->
@@ -105,8 +112,8 @@ initGame nPlayers handSize = do
       (card:newDeck) <- gets deck
       if isJoker card
         then do
-             lift $ putStrLn "Will not put joker to trash..."
-             i <- lift $ randomRIO (0, length newDeck - 1)
+             liftIO $ putStrLn "Will not put joker to trash..."
+             i <- liftIO $ randomRIO (0, length newDeck - 1)
              let (here, there) = splitAt i newDeck
              modify $ \st -> st {deck = here ++ [card] ++ there}
              trashOne
@@ -135,28 +142,28 @@ getPlayer i = do
   hs <- gets players
   if i <= length hs
     then return $ hs !! i
-    else fail $ "No such player: " ++ show i
+    else failure $ lprintf "No such player: {}" (Only i)
 
 setPlayer :: Int -> Player -> Game ()
 setPlayer i player = do
   hs <- gets players
   if i <= length hs
     then modify $ \st -> st {players = setelt i player (players st)}
-    else fail $ "No such player: " ++ show i
+    else failure $ lprintf "No such player: {}" (Only i)
 
 getMeld :: MeldId -> Game Meld
 getMeld i = do
   hs <- gets melds
   if i <= length hs
     then return $ hs !! i
-    else fail $ "No such meld: #" ++ show i
+    else failure $ lprintf "No such meld: #{}" (Only i)
 
 setMeld :: MeldId -> Meld -> Game ()
 setMeld i meld = do
   hs <- gets melds
   if i <= length hs
     then modify $ \st -> st {melds = setelt i meld (melds st)}
-    else fail $ "No such meld: #" ++ show i
+    else failure $ lprintf "No such meld: #{}" (Only i)
 
 doTrash i card = do
   hand <- getHand i
@@ -164,7 +171,7 @@ doTrash i card = do
     then do
          setHand i (C.delete card hand)
          modify $ \st -> st {trash = card : trash st}
-    else fail $ printf "Cannot trash %s: no such card in hand!" (show card)
+    else failure $ lprintf "Cannot trash {}: no such card in hand!" (Only $ show card)
 
 getJokerValue :: MeldId -> CardColor -> Game (Maybe Card)
 getJokerValue meldId color = do
@@ -172,7 +179,7 @@ getJokerValue meldId color = do
   case [card | (card, Just clr) <- zip (map snd $ meldCards' meld) (meldJokers meld), clr == color] of
     [] -> return Nothing
     [c] -> return $ Just c
-    _ -> fail $ printf "Unexpected: more than one %s joker in meld #%d" (show color) meldId
+    _ -> failure $ lprintf "Unexpected: more than one {} joker in meld #{}" (show color, meldId)
 
 meldAllowedToAdd :: Meld -> [Card]
 meldAllowedToAdd (Street _ suit from to _ _) = down ++ up
@@ -190,7 +197,7 @@ meldAllowedToAdd (Avenue _ val suits _ _) =
 meldChangeJoker :: Meld -> CardColor -> Game (Meld, Card)
 meldChangeJoker meld clr =
   case findIndex (== Just clr) (meldJokers meld) of
-    Nothing -> fail $ printf "No %s joker in meld" (show clr)
+    Nothing -> failure $ lprintf "No {} joker in meld" (Only $ show clr)
     Just jokerIdx -> do
         let meld' = meld {meldJokers = setelt jokerIdx Nothing (meldJokers meld)}
             (_,card) = meldCards' meld !! jokerIdx
@@ -218,7 +225,7 @@ newMeld i meld = do
       nmelds <- gets (length . melds)
       let meld' = meld {meldId = nmelds }
       modify $ \st -> st {melds = melds st ++ [meld']}
-    else fail $ "No cards in hand: " ++ show (cards \\ C.toList hand)
+    else failure $ lprintf "No cards in hand: {}" (Only $ show (cards \\ C.toList hand))
 
 addToMeld i (card, meldId) = do
   hand <- getHand i
@@ -231,14 +238,14 @@ addToMeld i (card, meldId) = do
           player <- getPlayer i
           meld' <- meldAdd player meld card
           setMeld meldId meld'
-        else fail $ printf "Not allowed to add %s to meld #%d; only allowed are %s" (show card) meldId
-                                                          (show $ meldAllowedToAdd meld)
-    else fail $ printf "No %s in hand" (show card)
+        else failure $ lprintf "Not allowed to add {} to meld #{}; only allowed are {}" (show card, meldId,
+                                                                                         (show $ meldAllowedToAdd meld))
+    else failure $ lprintf "No {} in hand" (Only $ show card)
 
 meldAdd :: Player -> Meld -> Card -> Game Meld
 meldAdd player meld@(Street {}) card = do
   if suit card /= streetSuit meld
-    then fail $ printf "Cannot add %s to street #%d: invalid card suit" (show card) (meldId meld)
+    then failure $ lprintf "Cannot add {} to street #{}: invalid card suit" (show card, meldId meld)
     else if value card == pred (streetFrom meld)
            then return $ meld {
                            streetFrom = pred (streetFrom meld),
@@ -249,12 +256,12 @@ meldAdd player meld@(Street {}) card = do
                                   streetTo = succ (streetTo meld),
                                   meldOwners = meldOwners meld ++ [player],
                                   meldJokers = meldJokers meld ++ [Nothing] }
-                  else fail $ printf "Cannot add %s to street %d: invalid card value" (show card) (meldId meld)
+                  else failure $ lprintf "Cannot add {} to street {}: invalid card value" (show card, meldId meld)
 meldAdd player meld@(Avenue {}) card = do
   if value card /= avenueValue meld
-    then fail $ printf "Cannot add %s to avenue #%d" (show card) (meldId meld)
+    then failure $ lprintf "Cannot add {} to avenue #{}" (show card, meldId meld)
     else if suit card `elem` avenueSuits meld
-           then fail $ printf "Cannot add %s to avenue #%d: this suit is already in meld" (show card) (meldId meld)
+           then failure $ lprintf "Cannot add {} to avenue #{}: this suit is already in meld" (show card, meldId meld)
            else return $ meld {
                            avenueSuits = suit card : avenueSuits meld,
                            meldOwners = player : meldOwners meld,
@@ -279,25 +286,25 @@ checkMove actor@(Player player) move = do
       canExit = any (>= 4) (map length myMelds)
   whenJust (toChangeJoker move) $ \(color,_) -> do
     when (Joker color `notElem` allNewMelds) $
-      fail $ "You can change joker only to use it in one of new melds."
+      failure $ __ "You can change joker only to use it in one of new melds."
   whenJust (toPickTrash move) $ \n -> do
     let newCards = take n t
         lastCard = last newCards
     when (lastCard `notElem` (allNewMelds ++ added)) $
-      fail $ "You can pick trash only to use it in new or existing melds."
+      failure $ __ "You can pick trash only to use it in new or existing melds."
   case toTrash move of
-    Joker _ -> fail "You can not trash joker."
+    Joker _ -> failure $ __ "You can not trash joker."
     _ -> return ()
   hand <- getHand (playerIdx player)
   let newSz = newHandSize move hand
   deckSz <- gets (length . deck)
   if newSz < 0
-    then fail "Too many cards spended"
+    then failure $ __ "Too many cards spended"
     else if newSz == 0 && not canExit && deckSz > 0
-           then fail "You can not exit yet."
+           then failure $ __ "You can not exit yet."
            else return ()
 
-checkMoveM :: Player -> Move -> Game (Maybe String)
+checkMoveM :: Player -> Move -> Game (Maybe LocalizedString)
 checkMoveM player move = do
   atomicallyTryM (checkMove player move)
 
@@ -305,7 +312,7 @@ isMoveValid :: Player -> Move -> Game Bool
 isMoveValid player move = do
   r <- atomicallyTry False (checkMove player move)
   when r $
-      lift $ putStr "." >> hFlush stdout
+      liftIO $ putStr "." >> hFlush stdout
   return r
 
 isMoveValid' :: Player -> Move -> Game Bool
@@ -316,38 +323,38 @@ isMoveValid' player move = do
 atomicallyTry :: Bool -> Game () -> Game Bool
 atomicallyTry toPrintExc action = do
   st <- get
-  r <- lift $ E.try $ execStateT action st
+  r <- liftIO $ runStateT (runErrorT action) st
   case r of
-    Right st' -> do
+    (Right _, st') -> do
                  put st'
                  return True
-    Left err -> do
+    (Left err,_) -> do
                 when toPrintExc $
-                    lift $ putStrLn $ "Error: " ++ show (err :: E.SomeException)
+                    liftIO $ putStrLn $ "Error: " ++ show err
                 put st
                 return False
 
-atomicallyTryM :: Game () -> Game (Maybe String)
+atomicallyTryM :: Game () -> Game (Maybe LocalizedString)
 atomicallyTryM action = do
   st <- get
-  r <- lift $ E.try $ execStateT action st
+  r <- liftIO $ runStateT (runErrorT action) st
   case r of
-    Right st' -> do
+    (Right _, st') -> do
                  put st'
                  return Nothing
-    Left err -> do
+    (Left err,_) -> do
                 put st
-                return $ Just $ show (err :: E.SomeException)
+                return $ Just err
 
 evalGame :: Game () -> Game (Maybe GameState)
 evalGame action = do
   st <- get
-  r <- lift $ E.try $ execStateT action st
+  r <- liftIO $ runStateT (runErrorT action) st
   put st
   case r of
-    Right st' -> return (Just st')
-    Left err -> do
-                lift $ putStrLn $ "Error: " ++ show (err :: E.SomeException)
+    (Right _, st') -> return (Just st')
+    (Left err, _) -> do
+                liftIO $ putStrLn $ "Error: " ++ show err
                 return Nothing
 
 possibleJokerChanges :: Hand -> Game [(CardColor, MeldId)]
@@ -392,7 +399,7 @@ possibleMoves actor@(Player player) hand = do
                         Nothing -> return (Just st0)
                         Just (color, meldId) -> evalGame $ changeJoker (playerIdx player) (color, meldId)
                 actions <- case r1 of
-                              Nothing -> fail $ "Unexpected: cannot change joker in meld"
+                              Nothing -> failure $ __ "Unexpected: cannot change joker in meld"
                               Just st1 -> do
                                 let hand1 = hands st1 !! playerIdx player
                                 t <- gets trash
@@ -407,35 +414,35 @@ possibleMoves actor@(Player player) hand = do
                                               let diffCards = map snd $ concat $ map meldCards melds
                                               let hand3 = C.deleteAll diffCards hand2
                                               allAdds <- possibleAddToMeldsM hand3
---                                               lift $ putStrLn $ "AllAdds: " ++ show (sublists allAdds)
+--                                               liftIO $ putStrLn $ "AllAdds: " ++ show (sublists allAdds)
                                               actions <- concatFor (sublists allAdds) $ \adds -> do
                                                             let diffCards2 = map fst adds
                                                             let hand4 = C.deleteAll diffCards2 hand3
                                                             let trashes = [Trash card | card <- C.toList hand4]
---                                                             lift $ putStrLn $ "Trashes: " ++ show trashes
+--                                                             liftIO $ putStrLn $ "Trashes: " ++ show trashes
                                                             let addActions = [AddToMeld card i | (card,i) <- adds]
                                                             if null addActions
                                                               then return [(Nothing, trash) | trash <- trashes]
                                                               else return [(Just add, trash) | add <- addActions, trash <- trashes]
---                                               lift $ putStrLn $ "Actions 0: " ++ show actions
---                                               lift $ putStrLn $ "Melds: " ++ show melds
+--                                               liftIO $ putStrLn $ "Actions 0: " ++ show actions
+--                                               liftIO $ putStrLn $ "Melds: " ++ show melds
                                               let newMelds = map NewMeld melds
                                               let res = if null newMelds
                                                           then [(Nothing, add, trash) | (add, trash) <- actions]
                                                           else [(Just newMeld, add, trash) | (add, trash) <- actions, newMeld <- newMelds]
---                                               lift $ putStrLn $ "Res: " ++ show res
+--                                               liftIO $ putStrLn $ "Res: " ++ show res
                                               return res
---                                   lift $ putStrLn $ "Actions 1: " ++ show actions
+--                                   liftIO $ putStrLn $ "Actions 1: " ++ show actions
                                   let pick = case pt of
                                                Nothing -> Nothing
                                                Just n -> Just (PickTrash n)
                                   return [(pick, newMeld, add, trash) | (newMeld, add, trash) <- actions]
---                 lift $ putStrLn $ "Actions 2: " ++ show actions
+--                 liftIO $ putStrLn $ "Actions 2: " ++ show actions
                 let changeJoker = case change of
                                     Nothing -> Nothing
                                     Just (color, meldId) -> Just (ChangeJoker color meldId Nothing)
                 return [(changeJoker, pick, newMeld, add, trash) | (pick, newMeld, add, trash) <- actions]
---   lift $ putStrLn $ "Actions 3: " ++ show actions
+--   liftIO $ putStrLn $ "Actions 3: " ++ show actions
   forM actions $ \(changeJoker, pick, newMeld, add, trash) -> do
     let actionList = (maybeToList changeJoker) ++
                      (maybeToList pick) ++ 

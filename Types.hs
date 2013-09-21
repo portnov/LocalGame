@@ -4,13 +4,18 @@ module Types where
 
 import Control.Monad
 import Control.Monad.State
+import Control.Monad.Error
 import Control.Failure
 import Data.Functor
 import qualified Data.Map as M
+import qualified Data.Text.Lazy as T
 import Text.Printf
 import Data.List
 import Data.Maybe
 import Data.Generics
+import Data.Monoid
+import Data.Text.Format
+import Text.Localize
 
 import Cards
 import qualified CardSet as C
@@ -97,11 +102,11 @@ allSame fn xs = and $ zipWith (==) ys (tail ys)
   where
     ys = map fn xs
 
-buildStreet :: (Monad m, Failure String m) => Player -> Suit -> [CardColor] -> [CardValue] -> m Meld 
-buildStreet _ _ jokers cards | length jokers + length cards < 3 = failure $ "Meld should have at least 3 cards"
+buildStreet :: (Monad m, Failure LocalizedString m) => Player -> Suit -> [CardColor] -> [CardValue] -> m Meld 
+buildStreet _ _ jokers cards | length jokers + length cards < 3 = failure $ __ "Meld should have at least 3 cards"
 buildStreet player ssuit jokers nojokers = do
     if length nojokers < 2 || length jokers > 1
-      then failure "Meld should have at least 2 non-jokers and maximum 1 joker"
+      then failure $ __ "Meld should have at least 2 non-jokers and maximum 1 joker"
       else run
   where
     jokerColor = case jokers of
@@ -118,7 +123,7 @@ buildStreet player ssuit jokers nojokers = do
       let ncards = length jokers + length nojokers
       if njokers == 0
         then if any (> 1) diffs
-               then failure $ "There are gaps in street and there are no any jokers"
+               then failure $ __ "There are gaps in street and there are no any jokers"
                else return $ Street {
                                meldId = 0,
                                streetSuit = ssuit,
@@ -128,7 +133,7 @@ buildStreet player ssuit jokers nojokers = do
                                meldJokers = replicate ncards Nothing }
         else -- if njokers == 1
           if any (> 2) diffs
-            then failure $ "Too large gaps in street"
+            then failure $ __ "Too large gaps in street"
             else do
                  let ngaps = length (filter (> 1) diffs)
                  if ngaps <= njokers
@@ -161,10 +166,10 @@ buildStreet player ssuit jokers nojokers = do
                                        streetTo   = toEnum $ maximum sorted + 1,
                                        meldOwners = replicate ncards player,
                                        meldJokers = replicate (length nojokers) Nothing ++ [Just jokerColor] }
-                   else failure $ "Cant' fill gaps in street with jokers"
+                   else failure $ __ "Cant' fill gaps in street with jokers"
 
-buildAvenue :: (Monad m, Failure String m) => Player -> CardValue -> [CardColor] -> [Suit] -> m Meld
-buildAvenue _ _ jokers cards | length jokers + length cards < 3 = failure $ "Meld should have at least 3 cards"
+buildAvenue :: (Monad m, Failure LocalizedString m) => Player -> CardValue -> [CardColor] -> [Suit] -> m Meld
+buildAvenue _ _ jokers cards | length jokers + length cards < 3 = failure $ __ "Meld should have at least 3 cards"
 buildAvenue player cvalue [] suits = do
       let ncards = length suits
       return $ Avenue {
@@ -176,7 +181,7 @@ buildAvenue player cvalue [] suits = do
 buildAvenue player cvalue [jokerColor] suits = do
       let ncards = length suits + 1
       js <- case [Clubs, Diamonds, Hearts, Spades] \\ suits of
-              [] -> failure $ "All suits are used, no place for joker"
+              [] -> failure $ __ "All suits are used, no place for joker"
               (s:_) -> return s
       return $ Avenue {
                  meldId = 0,
@@ -184,20 +189,20 @@ buildAvenue player cvalue [jokerColor] suits = do
                  avenueSuits = js : suits,
                  meldOwners  = replicate ncards player,
                  meldJokers  = Just jokerColor : replicate (length suits) Nothing }
-buildAvenue _ _ jokers _ = failure $ "Meld should have maximum 1 joker"
+buildAvenue _ _ jokers _ = failure $ __ "Meld should have maximum 1 joker"
 
-buildMeld :: (Monad m, Failure String m) => Player -> [Card] -> m Meld
-buildMeld _ cards | length cards < 3 = failure $ "Meld should have at least 3 cards"
+buildMeld :: (Monad m, Failure LocalizedString m) => Player -> [Card] -> m Meld
+buildMeld _ cards | length cards < 3 = failure $ __ "Meld should have at least 3 cards"
 buildMeld player cards = do
     let (jokers, nojokers) = partition isJoker cards
         njokers = length jokers
     if length nojokers < 2 || njokers > 1
-      then failure "Meld should have at least 2 non-jokers and maximum 1 joker"
+      then failure $ __ "Meld should have at least 2 non-jokers and maximum 1 joker"
       else do if allSame suit nojokers
                 then buildStreet njokers nojokers
                 else if allSame value nojokers
                        then buildAvenue njokers nojokers
-                       else failure $ "These cards do not form a meld"
+                       else failure $ __ "These cards do not form a meld"
   where
     jokerColor = case [clr | Joker clr <- cards] of
                    [] -> error "Unexpected: no joker"
@@ -209,7 +214,7 @@ buildMeld player cards = do
       let diffs = zipWith (-) (tail sorted) sorted
       if njokers == 0
         then if any (> 1) diffs
-               then failure $ "There are gaps in street and there are no any jokers"
+               then failure $ __ "There are gaps in street and there are no any jokers"
                else return $ Street {
                                meldId = 0,
                                streetSuit = suit (head nojokers),
@@ -219,7 +224,7 @@ buildMeld player cards = do
                                meldJokers = replicate (length cards) Nothing }
         else -- if njokers == 1
           if any (> 2) diffs
-            then failure $ "Too large gaps in street"
+            then failure $ __ "Too large gaps in street"
             else do
                  let ngaps = length (filter (> 1) diffs)
                  if ngaps <= njokers
@@ -252,7 +257,7 @@ buildMeld player cards = do
                                        streetTo   = toEnum $ maximum sorted + 1,
                                        meldOwners = replicate (length cards) player,
                                        meldJokers = replicate (length nojokers) Nothing ++ [Just jokerColor] }
-                   else failure $ "Cant' fill gaps in street with jokers"
+                   else failure $ __ "Cant' fill gaps in street with jokers"
 
     buildAvenue 0 nojokers = do
       return $ Avenue {
@@ -264,7 +269,7 @@ buildMeld player cards = do
     buildAvenue 1 nojokers = do
       let suits = map suit nojokers
       js <- case [Clubs, Diamonds, Hearts, Spades] \\ suits of
-              [] -> failure $ "All suits are used, no place for joker"
+              [] -> failure $ __ "All suits are used, no place for joker"
               (s:_) -> return s
       return $ Avenue {
                  meldId = 0,
@@ -301,7 +306,11 @@ instance Show GameState where
 
 showMeld m = show m ++ "\n"
 
-type Game a = StateT GameState IO a
+instance Error LocalizedString where
+  noMsg = mempty
+  strMsg msg = Untranslated $ T.pack msg
+
+type Game a = ErrorT LocalizedString (StateT GameState IO) a
 
 getHand :: Int -> Game Hand
 getHand i = do
@@ -404,34 +413,34 @@ instance Show Move where
       goMeld meld = "New meld:\n" ++ show meld
       goAdd (card,i) = printf "Add %s to meld #%d" (show card) i
 
-describeMove :: Move -> String
+describeMove :: Move -> LocalizedString
 describeMove move =
-              maybe "" showChangeJoker (toChangeJoker move) ++
-              maybe "" showPick (toPickTrash move) ++
-              unlines (map goMeld $ toNewMelds move) ++
-              unlines (map goAdd $ toAddToMelds move) ++
-              "Trash " ++ describeCard (toTrash move)
+              maybe mempty showChangeJoker (toChangeJoker move) <>
+              maybe mempty showPick (toPickTrash move) <>
+              unlinesL (map goMeld $ toNewMelds move) <>
+              unlinesL (map goAdd $ toAddToMelds move) <>
+              __ "Trash " <> describeCard (toTrash move)
     where
-      showChangeJoker (clr, i) = printf "Change %s Joker from meld #%d; " (show clr) i
-      showPick n = printf "Pick last %d cards from trash; " n
-      goMeld meld = "New meld: " ++ describeMeld meld ++ "; "
-      goAdd (card,i) = printf "Add %s to meld #%d; " (describeCard card) i
+      showChangeJoker (clr, i) = lprintf "Change {} Joker from meld #{}; " (show clr, i)
+      showPick n = lprintf "Pick last {} cards from trash; " (Only n)
+      goMeld meld = __ "New meld: " <> describeMeld meld <> (Untranslated $ T.pack "; ")
+      goAdd (card,i) = __ "Add " <> describeCard card <> lprintf " to meld #{}; " (Only i)
       
       describeMeld meld =
         let cards = map snd $ meldCards meld
-        in  unwords $ map describeCard cards
+        in  unwordsL $ map describeCard cards
 
-buildMove :: forall m. (Monad m, Failure String m) => Player -> [MoveAction] -> m Move
+buildMove :: forall m. (Monad m, Failure LocalizedString m) => Player -> [MoveAction] -> m Move
 buildMove player mas =
   case [c | Trash c <- mas] of
-    [] -> failure $ "One card must be trashed"
+    [] -> failure $ __ "One card must be trashed"
     [_] -> do
            (newMeldCards, move) <- foldM add (M.empty, emptyMove) mas
            newMelds <- forM (M.elems newMeldCards) $ \cards ->
                          buildMeld player cards
            return $ move {toNewMelds = newMelds ++ toNewMelds move}
 
-    _ -> failure $ "Only one card can be trashed"
+    _ -> failure $ __ "Only one card can be trashed"
   where
     add :: (M.Map Int [Card], Move) -> MoveAction -> m (M.Map Int [Card], Move)
     add (m,move) (ChangeJoker clr i _) = return $ (m, move {toChangeJoker = Just (clr, i)})

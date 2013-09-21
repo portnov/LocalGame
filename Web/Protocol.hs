@@ -7,15 +7,22 @@ import Control.Monad
 import Control.Exception
 import Control.Monad.IO.Class 
 import Control.Concurrent
+import qualified Data.ByteString as B
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import Data.Text (Text)
 import qualified Data.HashMap.Strict as H
 import Data.Aeson hiding (Error)
 import Data.Aeson.Types (Parser)
+import qualified Data.CaseInsensitive as CI
+import qualified Data.List as List
+import Data.Char (chr, ord)
 import Data.Generics
 import System.IO
 import Text.Printf
 import Text.Parsec (runParser)
+import Text.Localize
+import qualified Network.WebSockets as WS
 
 import Cards
 import Types
@@ -35,9 +42,9 @@ data Message =
   | Unlock
   | Scores Text [Int]
   | GiveCard Card
-  | MoveMsg Int Text
+  | MoveMsg Int LocalizedString
   | MoveAction Int MoveAction
-  | Error Text (Maybe ClientState)
+  | Error LocalizedString (Maybe ClientState)
   | SetState ClientState
   deriving (Eq, Show, Typeable)
 
@@ -76,6 +83,10 @@ instance ToJSON Message where
   toJSON (MoveAction i a) = addPair "event" "action" $ addPair "player" (toJSON i) $ toJSON a
   toJSON (Error err st) = object ["event" .= ("error" :: Text), "message" .= err, "state" .= st]
   toJSON (SetState st) = object ["event" .= ("state" :: Text), "state" .= st]
+
+instance ToJSON LocalizedString where
+  toJSON (Untranslated t) = toJSON t
+  toJSON l = toJSON $ show l
 
 instance ToJSON CardColor where
   toJSON Red = String "red"
@@ -175,6 +186,10 @@ instance FromJSON Message where
                    <*> o .: "hand" )
   parseJSON x = fail $ "Invalid message object: " ++ show x
 
+instance FromJSON LocalizedString where
+  parseJSON (String t) = return $ Untranslated $ TL.fromStrict t
+  parseJSON x = fail $ "Invalid message: " ++ show x
+
 instance FromJSON MoveAction where
   parseJSON (Object o) = parseAction o
   parseJSON x = fail $ "Invalid object for move action: " ++ show x
@@ -200,7 +215,7 @@ parseMove o = do
   trash <- o .: "trash"
   melds <- forM meldCards $ \cards ->
              case buildMeld undefined cards of
-               Left err -> fail $ "Invalid meld: " ++ err
+               Left err -> fail $ "Invalid meld: " ++ show (err :: LocalizedString)
                Right meld -> return meld
   return $ Move chg pick melds adds trash
 
@@ -239,17 +254,28 @@ parseMeld o = MeldCard
                <$> o .: "meld"
                <*> o .: "card"
 
+getRequestLanguage :: WS.Request -> LanguageId
+getRequestLanguage rq =
+    case List.lookup (CI.mk "Accept-Language") (WS.requestHeaders rq) of
+      Nothing -> "C"
+      Just hdr -> let bstr = B.takeWhile ok hdr
+                  in  map (chr . fromIntegral) (B.unpack bstr)
+  where
+    ok x = chr (fromIntegral x) `notElem` ",-;"
+
 instance Protocol Message where
-  type ProtocolState Message = (Chan Message, Chan Message)
+  type ProtocolState Message = (Translations, Chan Message, Chan Message)
 
   initProtocol _ = return ()
 
-  onClientMessage sink msg (fromPlayer, toPlayer) = do
+  onClientMessage rq sink msg (trans, fromPlayer, toPlayer) = do
     putStrLn $ "onClientMessage: " ++ show msg
     writeChan toPlayer msg
     res <- readChan fromPlayer
     putStrLn $ "Server answer: " ++ show res
-    sendMessage sink res
+    let lang = getRequestLanguage rq
+    let res' = translateMessage trans lang res
+    sendMessage sink res'
 
   getHelloUsername (Hello name) = Just name
   getHelloUsername _ = Nothing
@@ -257,3 +283,8 @@ instance Protocol Message where
   isQuit Quit = True
   isQuit _ = False
   
+translateMessage :: Translations -> LanguageId -> Message -> Message
+translateMessage t lang (MoveMsg i msg) = MoveMsg i $ Untranslated (translate' t lang msg)
+translateMessage t lang (Error msg x) = Error (Untranslated $ translate' t lang msg) x
+translateMessage _ _ x = x
+

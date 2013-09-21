@@ -1,6 +1,8 @@
 {-# LANGUAGE ExistentialQuantification, TypeFamilies, TypeSynonymInstances, FlexibleInstances, DeriveDataTypeable #-}
 import Control.Monad
+import Control.Monad.IO.Class
 import Control.Monad.State
+import Control.Monad.Error
 import Control.Exception
 import Data.Generics
 import Data.List
@@ -22,10 +24,10 @@ readMove p str =
   case runParser (moveActions p) () "<input>" str of
     Right res -> buildMove p res
     Left err -> do
-                lift $ putStrLn $ "Error: " ++ show err
-                lift $ putStr $ show p ++ " move: "
-                lift $ hFlush stdout
-                str <- lift $ getLine
+                liftIO $ putStrLn $ "Error: " ++ show err
+                liftIO $ putStr $ show p ++ " move: "
+                liftIO $ hFlush stdout
+                str <- liftIO $ getLine
                 readMove p str
 
 data Human = Human { userNumber :: Int }
@@ -39,14 +41,14 @@ instance IsPlayer Human where
   playerIdx (Human i) = i
 
   onGiveCard (Human i) card = do
-    lift $ putStrLn $ printf "H#%d new card: %s" i (show card)
+    liftIO $ putStrLn $ printf "H#%d new card: %s" i (show card)
 
   playerSelectMove u@(Human i) = do
     hand <- getHand i
-    lift $ putStrLn $ show u ++ " hand: " ++ show hand
-    lift $ putStr $ show u ++ " move: "
-    lift $ hFlush stdout
-    str <- lift $ getLine
+    liftIO $ putStrLn $ show u ++ " hand: " ++ show hand
+    liftIO $ putStr $ show u ++ " move: "
+    liftIO $ hFlush stdout
+    str <- liftIO $ getLine
     readMove (Player u) str
 
 human :: Int -> Player
@@ -74,9 +76,9 @@ runGame = do
           case actor of
             Player player -> do
               st <- get
-              lift $ putStrLn $ "Trash: " ++ unwords (map show $ trash st)
-              lift $ putStrLn $ "Melds:\n" ++ unwords (map showMeld (melds st))
-              lift $ putStrLn $ printf "Player %s move:" (playerName player)
+              liftIO $ putStrLn $ "Trash: " ++ unwords (map show $ trash st)
+              liftIO $ putStrLn $ "Melds:\n" ++ unwords (map showMeld (melds st))
+              liftIO $ putStrLn $ printf "Player %s move:" (playerName player)
               runPlayer i actor
               go ns
 
@@ -91,11 +93,11 @@ runGame = do
        winner <- getPlayer i
        forM_ (players st) $ \(Player player) -> do
           onEndGame player winner
-       lift $ putStrLn "End of game. States:"
-       lift $ print st
+       liftIO $ putStrLn "End of game. States:"
+       liftIO $ print st
        forM_ ns $ \i -> do
          points <- getPoints i
-         lift $ putStrLn $ printf "Player #%d points: %d" i points
+         liftIO $ putStrLn $ printf "Player #%d points: %d" i points
 
 allBeforeMove actor@(Player player) move = do
   ps <- gets players
@@ -135,5 +137,5 @@ main = do
                       then ["ai", "ai"]
                       else argv
   let players = zipWith makePlayer playerTypes [0..]
-  runStateT (testGame $ length players) (emptyState players)
+  runStateT (runErrorT $ testGame $ length players) (emptyState players)
 

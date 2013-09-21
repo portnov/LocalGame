@@ -46,7 +46,7 @@ class (FromJSON message, ToJSON message, Show message) => Protocol message where
 
   initProtocol :: message -> IO ()
 
-  onClientMessage :: Sink -> message -> ProtocolState message -> IO ()
+  onClientMessage :: WS.Request -> Sink -> message -> ProtocolState message -> IO ()
 
   onInvalidMessage :: String -> String -> IO message
   onInvalidMessage string err =
@@ -115,7 +115,7 @@ application var mchan _ rq = do
         liftIO $ putStrLn $ "Waiting data from client..."
         text <- WS.receiveData
         msg <- parseText text
-        liftIO $ onClientMessage sink (msg :: message) mchan
+        liftIO $ onClientMessage rq sink (msg :: message) mchan
       where
         catchDisconnect e = case fromException e of
             Just WS.ConnectionClosed -> liftIO $ removeClient var name
