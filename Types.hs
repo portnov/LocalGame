@@ -1,7 +1,8 @@
-{-# LANGUAGE ExistentialQuantification, TypeFamilies, GADTs, TypeOperators, FlexibleContexts, DeriveDataTypeable, ScopedTypeVariables, GeneralizedNewtypeDeriving, MultiParamTypeClasses #-}
+{-# LANGUAGE ExistentialQuantification, TypeFamilies, GADTs, TypeOperators, FlexibleContexts, DeriveDataTypeable, ScopedTypeVariables, GeneralizedNewtypeDeriving, MultiParamTypeClasses, TypeSynonymInstances, FlexibleInstances #-}
 
 module Types where
 
+import qualified Control.Exception as E
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Error
@@ -305,6 +306,9 @@ instance Show GameState where
       showHand i hand = show i ++ ":\t" ++ show hand ++ "\n"
 
 showMeld m = show m ++ "\n"
+
+instance E.Exception String
+instance E.Exception LocalizedString
 
 instance Error LocalizedString where
   noMsg = mempty

@@ -22,10 +22,6 @@ import Cards
 import qualified CardSet as C
 import Types
 
-instance E.Exception String
-
-instance E.Exception LocalizedString
-
 exitBonus :: Int
 exitBonus = 50
 
@@ -216,6 +212,7 @@ pickTrash i n = do
   setHand i $ C.insertAll newHand hand
   modify $ \st -> st {trash = newTrash}
 
+newMeld :: Int -> Meld -> Game ()
 newMeld i meld = do
   hand <- getHand i
   let cards = map snd $ meldCards meld
@@ -227,6 +224,7 @@ newMeld i meld = do
       modify $ \st -> st {melds = melds st ++ [meld']}
     else failure $ lprintf "No cards in hand: {}" (Only $ show (cards \\ C.toList hand))
 
+addToMeld :: Int -> (Card, MeldId) -> Game ()
 addToMeld i (card, meldId) = do
   hand <- getHand i
   if card `C.elem` hand
